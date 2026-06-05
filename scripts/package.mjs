@@ -12,11 +12,12 @@ if (!existsSync(resolve(root, "dist"))) {
 }
 
 mkdirSync(stage, { recursive: true });
-// Built artifacts (dist/index.html + index.js + index.css + assets) go to the stage root,
-// so manifest `main: index.html` resolves to the production bundle — not the dev index.html.
+// dist/ is already a self-contained UXP plugin folder: the build (vite copyPluginFiles) writes
+// dist/manifest.json AND dist/icons alongside index.html + index.js + index.css. So copy dist/
+// verbatim — do NOT overlay the root manifest.json on top, or a prod build's manifest (localhost
+// + http stripped for Marketplace) gets clobbered by the dev variant and the .ccx ships dev-only
+// network/scheme allowances. Build with VIBI_BFF_BASE_URL set for a release .ccx.
 cpSync(resolve(root, "dist"), stage, { recursive: true });
-cpSync(resolve(root, "manifest.json"), resolve(stage, "manifest.json"));
-cpSync(resolve(root, "icons"), resolve(stage, "icons"), { recursive: true });
 
 execSync(`cd "${stage}" && zip -r "${out}" .`, { stdio: "inherit" });
 console.log(`packaged: ${out}`);
