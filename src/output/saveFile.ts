@@ -1,4 +1,5 @@
 import { storage } from "uxp";
+import { audioUrlToBytes } from "../audio/audioUrl";
 
 /**
  * Save bytes to a user-chosen location via the UXP file picker. `<a download>.click()`
@@ -15,6 +16,6 @@ export async function saveBytes(suggestedName: string, bytes: ArrayBuffer): Prom
 
 /** Fetch a Blob URL's bytes, then save them. Used for blob-URL-backed audio/SRT outputs. */
 export async function saveFromUrl(suggestedName: string, url: string): Promise<boolean> {
-  const bytes = await (await fetch(url)).arrayBuffer();
+  const bytes = await audioUrlToBytes(url);
   return saveBytes(suggestedName, bytes);
 }

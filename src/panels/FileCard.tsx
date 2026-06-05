@@ -13,6 +13,7 @@ import { ScriptEditor } from "./ScriptEditor";
 import type { ScriptDraft } from "../types/job";
 import { InsufficientCreditsError } from "../jobs/creditClient";
 import { importAudioToProject, importAudioToTimeline, type AudioToImport } from "../host/premiere";
+import { makeAudioUrl, revokeAudioUrl, audioUrlToBytes } from "../audio/audioUrl";
 
 type ImportTarget = "project" | "timeline";
 
@@ -127,23 +128,25 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     };
   }, [entry.source]);
 
-  // Every Blob URL we createObjectURL pins its underlying WAV buffer (multi-MB per stem)
-  // until revoked. Track them and revoke on unmount, plus eagerly when superseded.
+  // Each audio handle pins its underlying WAV buffer (multi-MB per stem) until revoked. Track
+  // them and revoke on unmount, plus eagerly when superseded. makeAudioUrl/revokeAudioUrl keep
+  // the bytes in a registry so playback/preview/import never depend on fetch(objectURL) — which
+  // is unverified in UXP (KNOWN_ISSUES) — see audio/audioUrl.ts.
   const objectUrls = useRef<Set<string>>(new Set());
   useEffect(() => {
     const urls = objectUrls.current;
     return () => {
-      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.forEach((u) => revokeAudioUrl(u));
       urls.clear();
     };
   }, []);
-  function makeObjectUrl(blob: Blob): string {
-    const url = URL.createObjectURL(blob);
+  function makeObjectUrl(bytes: ArrayBuffer): string {
+    const url = makeAudioUrl(bytes);
     objectUrls.current.add(url);
     return url;
   }
   function revokeObjectUrl(url: string | null | undefined): void {
-    if (url && objectUrls.current.delete(url)) URL.revokeObjectURL(url);
+    if (url && objectUrls.current.delete(url)) revokeAudioUrl(url);
   }
   function revokeStageUrls(s: Stage): void {
     if (s.kind !== "done") return;
@@ -175,7 +178,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
       const stems: StemView[] = await Promise.all(
         separated.map(async (s, idx) => {
           const loaded = await loadPeaks(s.bytes, `${s.label || "stem"}.wav`);
-          const url = makeObjectUrl(new Blob([s.bytes], { type: "audio/wav" }));
+          const url = makeObjectUrl(s.bytes);
           return {
             id: s.stemId,
             label: s.label,
@@ -223,7 +226,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
         selected.map((s) => ({ audioUrl: s.audioUrl!, volume: s.volume })),
       );
       const loaded = await loadPeaks(bytes, "mix.wav");
-      const audioUrl = makeObjectUrl(new Blob([bytes], { type: "audio/wav" }));
+      const audioUrl = makeObjectUrl(bytes);
       const mix: MixResult = {
         id: `mix-${Date.now()}`,
         name: `${entry.source.fileName.replace(/\.[^.]+$/, "")} - mix.wav`,
@@ -281,7 +284,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           .map((seg) => ({ startMs: seg.startMs, endMs: seg.endMs }));
         const bytes = await segmentSpeaker(entry.source.bytes, ranges);
         const loaded = await loadPeaks(bytes, `${sp.label || "speaker"}.wav`);
-        const url = makeObjectUrl(new Blob([bytes], { type: "audio/wav" }));
+        const url = makeObjectUrl(bytes);
         newStems.push({
           id: `spk-${sp.index}`,
           label: sp.label || `화자 ${sp.index}`,
@@ -326,10 +329,6 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     });
   }
 
-  async function urlToBytes(url: string): Promise<ArrayBuffer> {
-    return (await fetch(url)).arrayBuffer();
-  }
-
   async function runImport(target: ImportTarget, items: AudioToImport[], label: string) {
     if (items.length === 0) return;
     setImportError(null);
@@ -351,7 +350,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     if (stage.kind !== "done" || !stage.mix) return;
     const item: AudioToImport = {
       fileName: stage.mix.name,
-      bytes: await urlToBytes(stage.mix.audioUrl),
+      bytes: await audioUrlToBytes(stage.mix.audioUrl),
     };
     await runImport(target, [item], "mix");
   }

@@ -8,6 +8,7 @@
 // volume fader affect playback live. Buffers are cached per URL so re-play is instant.
 
 import { parseWav } from "./wav";
+import { audioUrlToBytes } from "./audioUrl";
 
 let ctx: AudioContext | null = null;
 let ctxResolved = false;
@@ -48,7 +49,7 @@ async function getBuffer(url: string): Promise<AudioBuffer> {
   const c = getCtx()!;
   const cached = bufferCache.get(url);
   if (cached) return cached;
-  const bytes = await (await fetch(url)).arrayBuffer();
+  const bytes = await audioUrlToBytes(url);
   let buffer: AudioBuffer;
   // Build the AudioBuffer from parsed PCM for WAV (stems/mix) so playback doesn't depend on
   // UXP's flaky decodeAudioData — only on AudioContext existing. Fall back for mp3/m4a.

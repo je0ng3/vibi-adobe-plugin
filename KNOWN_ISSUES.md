@@ -1,80 +1,41 @@
-# Known issues & platform constraints
+# Unresolved issues
 
-Hard-won lessons for this plugin. The panel (this repo's `src/`) talks **only to its own backend,
-`server/`** (Node + Hono, `PUBLIC_BASE_URL`) over a Bearer JWT — it never calls Perso AI, Gemini,
-Paddle, or storage directly. Every Perso-specific quirk (upload codec, `api.perso.ai` vs
-`portal-media.perso.ai` download-host split, `originalBackgroundPath` vs `originalSubBackground`,
-`downloadInfo` readiness, 5xx retry, `getProjectInfo` envelope, tar directory-traversal guard,
-`mediaSeq` source) lives **server-side** in `server/src/perso/*`, where the `PERSO_API_KEY` stays.
+Everything below is implemented with a UXP-safe approach and works in the Vite browser preview,
+but is **not yet verified in a real Premiere Pro panel** (UXP runtime, Premiere 25.6+). The open
+question for each is whether the approach holds in the actual runtime. These are the only items
+still open — resolved constraints and shipped fixes have been removed from this doc.
 
-> A direct client-side Perso integration used to live in the panel's `src/perso/*`
-> (`persoClient.ts`, `separationFlow.ts`, `persoConfig.ts`, `tar.ts`, `persoTypes.ts`) — a dead
-> duplicate of the server's client. It was **removed** because it held the Perso `XP-API-KEY` in the
-> client. Do **not** reintroduce it: a `.ccx` is a plain zip, so any embedded API key ships to — and
-> is extractable by — every user. All third-party calls must stay behind `server/`.
+## Implemented but unverified in the real UXP runtime
 
-## Audio formats: m4a / mp3 / wav only — FLAC silently fails
-
-Perso audio-separation **accepts FLAC at upload time but never finishes the job** — it polls to
-`progress=100, hasFailed=false, progressReason="Failed"`. The BFF rejects anything outside
-`m4a / mp3 / wav`, and the plugin enforces the same whitelist up front so the user gets an immediate,
-clear error instead of a job that hangs to a Perso-side failure: `AUDIO_EXTS` in
-`src/host/premiere.ts` (timeline-clip reader) and `SUPPORTED_EXTS` in `src/input/audioPicker.ts`
-(OS file picker). Do not add OGG / FLAC / WebM.
-
-# No native drag from the timeline into the panel
-
-UXP panels are web views; their HTML5 `drop` only receives **OS-filesystem file drops**
-(Finder/Explorer). A clip dragged from Premiere's native timeline/project panel never
-delivers a usable payload to the web layer — there is no host→UXP drag bridge. So the
-`Dropzone` handles OS files only. The supported equivalent is `readSelectedAudioClips`
-(`src/host/premiere.ts`): the user selects clip(s) on the timeline and the
-"Add selected timeline clip" button reads the underlying media. Only m4a/mp3/wav clips are
-read; video selections are skipped with the export-audio hint. Do not re-attempt native
-timeline drag — it is a platform limitation, not a bug.
-
-The reverse is also unsupported: a drag started **inside** a UXP panel cannot drop onto
-Premiere's native Project panel or timeline (no UXP→host drag bridge). So separation
-results are pushed back programmatically instead — `importAudioToProject` /
-`importAudioToTimeline` (`src/host/premiere.ts`) write the stem/mix to a temp file and call
-`project.importFiles()` (Project panel) and `sequence.appendClipToAudioTrack()` (timeline).
-The per-stem/mix "Project" / "Timeline" buttons drive these. `appendClipToAudioTrack` is
-called with a distinct 0-based track index per stem so time-aligned stems land on separate
-tracks (overlap) rather than concatenating on one — verify track creation in a real
-sequence; if the sequence lacks enough audio tracks, the call may need a track first.
-
-# UXP runtime compatibility (verify in real Premiere Pro)
-
-UXP is **not** a full browser. Several web APIs the plugin uses work in the Vite browser
-preview but are **unverified or known-risky** in the actual UXP runtime (Premiere 25.6+).
-Verify each in a real panel; if unsupported, the noted fallback is required.
-
-| Web API used | Where | UXP risk | Fallback if unsupported |
+| Area | Where | What to confirm | Fallback if it breaks |
 |---|---|---|---|
-| `AudioContext.decodeAudioData` | `audio/waveform.ts` (waveform peaks) | High — Web Audio often absent | **Done**: WAV peaks via pure-JS `audio/wav.ts`; mp3/m4a duration via `audio/duration.ts`; mp3/m4a preview peaks computed server-side (`POST /api/v2/peaks`, ffmpeg) and fetched in `jobs/peaksClient.ts`. |
-| `OfflineAudioContext` | `audio/mixer.ts` (Mix selected) | High | **Done**: mixing is pure-JS PCM summing over WAV stems (`audio/mixer.ts` + `audio/wav.ts`), no Web Audio. |
-| `<audio>` playback | (removed) | **Confirmed broken** — `pause is not a function`, crashed on render | Replaced by Web Audio engine `audio/player.ts` (AudioBufferSourceNode + GainNode). Play buttons render only when `playbackSupported()` (AudioContext present); otherwise hidden — preview via timeline import. |
-| `URL.createObjectURL` + `Blob` | stem/mix/dub/srt | Medium | Write to temp via `storage.localFileSystem`, use file URL |
-| `FormData` body in `fetch` | upload clients (`jobs/*Client.ts`) | **Confirmed broken** — server got no fields → 400 `audio_required` | Fixed: `jobs/multipart.ts` builds the multipart body as a raw ArrayBuffer with an explicit boundary on Content-Type. Used by separation/transcript/dubbing. Filename is ASCII-sanitized. |
-| `<a download>.click()` | SRT / mp3 download in `FileCard` | High — no anchor download | Switch to `storage.localFileSystem.getFileForSaving` (currently a.click only — not yet wired) |
-| `localStorage` | only in `uxp-stubs` preview | N/A | Real build uses `secureStorage` (OK) |
-| `TextEncoder` / `TextDecoder` | `auth/tokenStore.ts` | **Confirmed absent** — `ReferenceError` in real UXP | `tokenStore.ts` does its own ASCII byte<->char conversion (token values are pure ASCII, so no global needed). A UTF-8 polyfill on `globalThis` in `public/uxp-polyfills.js` covers any other callers. Note `window` is NOT the global in UXP — polyfills must target `globalThis`. |
-
-`audio/waveform.ts` and `audio/mixer.ts` already guard for a missing `AudioContext`/
-`OfflineAudioContext` (return mock peaks / throw a clear error) so the panel won't hard-crash.
+| Blob URL + `fetch(objectURL)` | `audio/audioUrl.ts` | `createObjectURL` is guarded and every handle's bytes are cached in a registry, so playback/preview/import/mix read bytes without `fetch(objectURL)`. Confirm all four read correctly. | Synthetic `mem://` handle path must still round-trip bytes when `URL`/`Blob` are wholly absent. |
+| Web Audio playback | `audio/player.ts` | `AudioContext` constructs from a click; WAV plays via parsed PCM; volume fader + seek work. | If absent, `playbackSupported()` is false → preview via OS default app (`audio/preview.ts`). |
+| OS-default-app preview | `audio/preview.ts` | Temp file write + `shell.openPath`/`openExternal` opens the clip in the default audio app. | — |
+| Save dialog | `output/saveFile.ts` | `getFileForSaving` + `file.write` writes to a user-chosen path. | This IS the fallback for the broken `<a download>`. |
+| Multipart upload | `jobs/multipart.ts` | Raw-ArrayBuffer body with explicit boundary reaches the server with fields intact (separation / peaks / segment / extract). | — |
+| Temp-file import | `host/premiere.ts` (`importAudioToProject` / `importAudioToTimeline`) | Temp write + `project.importFiles` + `appendClipToAudioTrack` land clips on the Project panel / timeline. | — |
+| Audio-track creation | `host/premiere.ts` (`ensureAudioTracks`) | Which track API exists — `getAudioTrackCount` / `addAudioTrack` / `addTracks` — so time-aligned stems grow onto separate tracks. | Clamp to the last existing track; clear error asking the user to add tracks. |
+| Device-code sign-in | `auth/*` | External browser opens, code authorizes, panel goes signed-in; a 401 routes back to login with a notice. | — |
+| `secureStorage` token persistence | `auth/tokenStore.ts` | Token survives panel reload; ASCII byte conversion + `globalThis` UTF-8 polyfill cover the absent `TextEncoder`/`TextDecoder`. | — |
 
 ## Verification checklist (real Premiere panel)
 
 1. Load `dist/` via UXP Developer Tool → panel renders, Spectrum styles intact.
 2. Sign in (device code flow) → external browser opens, code authorizes, panel goes signed-in.
-3. Add audio (OS file picker + drag-drop). Confirm `getFileForOpening` works.
-4. Prepare → waveform draws (confirms Web Audio decode) → range drag + click seek.
-5. Review script → STT returns, modal edits work.
-6. Generate with separation → stems play (confirms `<audio>` + Blob URL), waveforms per stem.
-7. Mix selected → confirms `OfflineAudioContext`. Use as source.
-8. Generate with transcript → SRT download (confirms file save).
-9. Generate with dubbing → per-language mp3 plays + downloads.
-10. Credits badge updates; insufficient-credits path shows the notice.
+3. Add audio three ways: OS file picker, OS drag-drop, and "Add selected timeline clip"
+   (`readSelectedAudioClips`). Only m4a/mp3/wav are accepted.
+4. Per-file card preps → waveform draws (WAV via pure-JS `audio/wav.ts`; mp3/m4a via server peaks,
+   `POST /api/v2/peaks`) → click-seek on the bar.
+5. Separate → stems return with per-stem waveform, volume fader, and select checkbox. Stems play
+   in-panel when `playbackSupported()`; otherwise preview opens the OS default app (`audio/preview.ts`).
+6. "Check script" → the diarized script expands (no extra STT job), speaker edits persist across
+   collapse, and "rebuild audio" re-cuts isolated speaker tracks (`segmentClient`).
+7. Mix selected → server mix (`POST /api/v2/mix`, ffmpeg) returns a WAV that plays / imports.
+8. Import a stem and the mix to **Project** and **Timeline** — confirm temp-file write +
+   `project.importFiles` + `appendClipToAudioTrack`; ensure `ensureAudioTracks` grows the sequence
+   enough for time-aligned stems.
+9. Credits badge updates after a separation; the insufficient-credits path shows the Buy credits notice.
 
 Anything that fails here points to the fallback column above.
 </content>

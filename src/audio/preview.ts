@@ -1,10 +1,11 @@
 import { storage, shell } from "uxp";
+import { audioUrlToBytes } from "./audioUrl";
 
 // UXP can't play audio inside the panel (no Web Audio API, and the <audio> element's play()/pause()
 // don't work — see player.ts / KNOWN_ISSUES). The realistic preview is to write the clip to a temp
 // file and hand it to the OS default audio app. File write + shell-open are supported in UXP.
 export async function previewInDefaultApp(url: string, fileName: string): Promise<void> {
-  const bytes = await (await fetch(url)).arrayBuffer();
+  const bytes = await audioUrlToBytes(url);
   const tmp = await storage.localFileSystem.getTemporaryFolder();
   const safe = fileName.replace(/[^\w.-]+/g, "_") || "preview.wav";
   const file = await tmp.createFile(safe, { overwrite: true });

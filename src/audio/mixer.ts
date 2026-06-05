@@ -2,6 +2,7 @@ import { BFF_BASE_URL } from "../config";
 import { loadToken } from "../auth/tokenStore";
 import { check401 } from "../auth/session";
 import { buildMultipart } from "../jobs/multipart";
+import { audioUrlToBytes } from "./audioUrl";
 
 export interface MixSource {
   audioUrl: string;
@@ -18,7 +19,7 @@ export async function mixStems(sources: MixSource[]): Promise<ArrayBuffer> {
 
   const parts = await Promise.all(
     sources.map(async (s) => ({
-      bytes: await fetch(s.audioUrl).then((r) => r.arrayBuffer()),
+      bytes: await audioUrlToBytes(s.audioUrl),
       volume: s.volume,
     })),
   );
