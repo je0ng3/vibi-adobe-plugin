@@ -36,17 +36,23 @@ function ffmpegMix(paths: string[], volumes: number[]): Promise<Buffer> {
   const args: string[] = [];
   for (const p of paths) args.push("-i", p);
 
-  // Per-input volume, then amix. normalize=0 keeps each input's level (default amix divides
-  // by the input count, which would quietly attenuate the mix).
+  // amix assumes every input already shares one sample rate / sample format / channel layout —
+  // it does NOT resample. Stems that each decode fine on their own but differ here (e.g. a mono
+  // speaker stem + a stereo background, or 44.1k + 48k) otherwise mix at the wrong speed/length,
+  // so a voice can "drop out" partway while another stem keeps playing. Normalize every input to
+  // 48k / fltp / stereo BEFORE applying per-input volume and amixing. normalize=0 keeps each
+  // input's level (default amix divides by the input count, quietly attenuating the mix);
+  // duration=longest is the default but pinned here so the mix always spans the longest stem.
+  const FMT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
   let filter = "";
   for (let i = 0; i < n; i++) {
     const g = Math.min(1.5, Math.max(0, volumes[i] / 100)).toFixed(4);
-    filter += `[${i}:a]volume=${g}[a${i}];`;
+    filter += `[${i}:a]${FMT},volume=${g}[a${i}];`;
   }
   for (let i = 0; i < n; i++) filter += `[a${i}]`;
-  filter += `amix=inputs=${n}:normalize=0[out]`;
+  filter += `amix=inputs=${n}:normalize=0:duration=longest[out]`;
 
-  args.push("-filter_complex", filter, "-map", "[out]", "-ac", "2", "-f", "wav", "pipe:1");
+  args.push("-filter_complex", filter, "-map", "[out]", "-ac", "2", "-ar", "48000", "-f", "wav", "pipe:1");
 
   return new Promise((resolve, reject) => {
     const proc = spawn(FFMPEG, args);

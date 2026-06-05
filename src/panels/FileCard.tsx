@@ -269,20 +269,33 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     }
   }
 
-  // Regenerate one isolated track per (edited) speaker by cutting the original to that speaker's
-  // segment time ranges, then replace the voice stems with the script-based set (keeping background).
+  // Regenerate one isolated track per (edited) speaker by cutting that speaker's segment time
+  // ranges out of the separated VOCALS, then replace the voice stems with the script-based set
+  // (keeping background).
   async function regenerateFromScript() {
     const draft = scriptDraft;
-    if (!draft || scriptBusy) return;
+    if (!draft || scriptBusy || stage.kind !== "done") return;
     setScriptBusy(true);
     setScriptError(null);
     try {
+      // Cut from the separated vocals, NOT entry.source.bytes (the original mix). The original
+      // still contains the background and every other voice, so slicing it by time would carry
+      // that audio into each "speaker" track — mixing them back then doubles the background and
+      // bleeds in sounds the user didn't select. The combined non-background stems ARE the
+      // isolated voices, so re-cutting them keeps each speaker track clean.
+      const voiceStems = stage.stems.filter((s) => s.id !== "background" && s.audioUrl);
+      if (voiceStems.length === 0) throw new Error("No separated voice track to rebuild from.");
+      const vocals =
+        voiceStems.length === 1
+          ? await audioUrlToBytes(voiceStems[0].audioUrl!)
+          : await mixStems(voiceStems.map((s) => ({ audioUrl: s.audioUrl!, volume: 100 })));
+
       const newStems: StemView[] = [];
       for (const sp of draft.speakers) {
         const ranges = draft.segments
           .filter((seg) => seg.speakerIndex === sp.index)
           .map((seg) => ({ startMs: seg.startMs, endMs: seg.endMs }));
-        const bytes = await segmentSpeaker(entry.source.bytes, ranges);
+        const bytes = await segmentSpeaker(vocals, ranges);
         const loaded = await loadPeaks(bytes, `${sp.label || "speaker"}.wav`);
         const url = makeObjectUrl(bytes);
         newStems.push({
