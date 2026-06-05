@@ -3,6 +3,9 @@ node_modules
 .env.*
 *.log
 
+# Transient working data (STEM_DIR) — separated stems written per job, swept on a TTL
+.data/
+
 # Secrets — never commit service-account keys or credential files
 credentials/
 *.serviceaccount.json
