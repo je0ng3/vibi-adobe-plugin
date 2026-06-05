@@ -1,18 +1,40 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
-import { cpSync } from "fs";
+import { cpSync, readFileSync, writeFileSync } from "fs";
 
 // Copy manifest.json + icons into dist after each build so dist/ is itself a loadable UXP
 // plugin folder. Without this, dist/ has no manifest and UDT must load build/stage (only
 // refreshed by `npm run package`) — a stale stage there silently runs an old bundle.
 // With this, point UDT at dist/ and `npm run watch` keeps the loaded plugin current.
-function copyPluginFiles() {
+//
+// The source manifest.json is the **dev** variant: it whitelists the local BFF
+// (`http://localhost:8787`) and the `http` launchProcess scheme so device-code sign-in can
+// open the local verification URL. A **production** build (`VIBI_BFF_BASE_URL` set) strips
+// both — the shipped .ccx then only reaches the production backend over https, which is what
+// Adobe Marketplace expects. Edit the dev allowances in manifest.json; prod stays clean
+// automatically.
+function copyPluginFiles(isProd: boolean) {
   return {
     name: "copy-plugin-files",
     closeBundle() {
       const root = __dirname;
-      cpSync(resolve(root, "manifest.json"), resolve(root, "dist/manifest.json"));
+      const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
+      if (isProd) {
+        const perms = manifest.requiredPermissions ?? {};
+        const net = perms.network;
+        if (net && Array.isArray(net.domains)) {
+          // Keep only https, non-localhost domains.
+          net.domains = net.domains.filter(
+            (d: string) => /^https:\/\//.test(d) && !d.includes("localhost"),
+          );
+        }
+        const lp = perms.launchProcess;
+        if (lp && Array.isArray(lp.schemes)) {
+          lp.schemes = lp.schemes.filter((s: string) => s !== "http");
+        }
+      }
+      writeFileSync(resolve(root, "dist/manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
       cpSync(resolve(root, "icons"), resolve(root, "dist/icons"), { recursive: true });
     },
   };
@@ -60,7 +82,7 @@ export default defineConfig(({ command }) => {
     // Strip console.*/debugger from the production bundle. Adobe Marketplace review rejects
     // production builds that ship developer consoles; dev/UDT builds keep logging for debugging.
     esbuild: isProd ? { drop: ["console", "debugger"] } : {},
-    plugins: [react(), uxpHtml({ diag: !isProd }), copyPluginFiles()],
+    plugins: [react(), uxpHtml({ diag: !isProd }), copyPluginFiles(isProd)],
     resolve: {
       alias: isServe
         ? {

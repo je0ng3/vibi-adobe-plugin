@@ -25,12 +25,13 @@
   "requiredPermissions": {
     "network": {
       "domains": [
-        "https://plugin-api.vibi.fm"
+        "https://plugin-api.vibi.fm",
+        "http://localhost:8787"
       ]
     },
     "localFileSystem": "fullAccess",
     "launchProcess": {
-      "schemes": ["https"],
+      "schemes": ["https", "http"],
       "extensions": [".wav"]
     }
   },
