@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+*.ccx
+.env
+.env.local
+.DS_Store
+
+# Secrets — never commit service-account keys or credential files
+server/credentials/
+**/credentials/

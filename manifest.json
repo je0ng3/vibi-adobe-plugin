@@ -1,0 +1,40 @@
+{
+  "manifestVersion": 5,
+  "id": "ai.perso.vibi.separate",
+  "name": "Vibi Separate",
+  "version": "0.1.23",
+  "main": "index.html",
+  "featureFlags": {
+    "enableSWCSupport": true
+  },
+  "host": [
+    {
+      "app": "premierepro",
+      "minVersion": "24.0.0"
+    }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "vibi.separate.panel",
+      "label": { "default": "Vibi Separate" },
+      "minimumSize": { "width": 320, "height": 480 },
+      "preferredDockedSize": { "width": 360, "height": 600 }
+    }
+  ],
+  "requiredPermissions": {
+    "network": {
+      "domains": [
+        "https://plugin-api.vibi.fm"
+      ]
+    },
+    "localFileSystem": "fullAccess",
+    "launchProcess": {
+      "schemes": ["https"],
+      "extensions": [".wav"]
+    }
+  },
+  "icons": [
+    { "width": 23, "height": 23, "path": "icons/icon-23.png", "scale": [1, 2], "theme": ["darkest", "dark", "medium", "lightest", "light", "all"] }
+  ]
+}

@@ -1,0 +1,13 @@
+node_modules
+.env
+.env.*
+*.log
+
+# Secrets — never commit service-account keys or credential files
+credentials/
+*.serviceaccount.json
+*-credentials.json
+
+# Oracle deploy — filled secrets, never commit
+deploy/oracle/plugin.env
+deploy/oracle/*.out
