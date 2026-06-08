@@ -71,6 +71,10 @@ export default defineConfig(({ command }) => {
   const isServe = command === "serve";
   // Production = backend URL injected. Used to gate the dev-only on-panel error overlay.
   const isProd = (process.env.VIBI_BFF_BASE_URL ?? "").length > 0;
+  // Debug builds: force the on-panel error overlay + keep console even against a prod backend.
+  // Use to chase a runtime error on the real server: VIBI_DIAG=true VIBI_BFF_BASE_URL=… npm run build
+  // Never ship a VIBI_DIAG build to Marketplace (overlay + console are present).
+  const diag = process.env.VIBI_DIAG === "true" || !isProd;
   return {
     // UXP loads assets relative to the plugin root, not from a web server root.
     base: "./",
@@ -85,8 +89,8 @@ export default defineConfig(({ command }) => {
     },
     // Strip console.*/debugger from the production bundle. Adobe Marketplace review rejects
     // production builds that ship developer consoles; dev/UDT builds keep logging for debugging.
-    esbuild: isProd ? { drop: ["console", "debugger"] } : {},
-    plugins: [react(), uxpHtml({ diag: !isProd }), copyPluginFiles(isProd)],
+    esbuild: isProd && !diag ? { drop: ["console", "debugger"] } : {},
+    plugins: [react(), uxpHtml({ diag }), copyPluginFiles(isProd)],
     resolve: {
       alias: isServe
         ? {

@@ -26,9 +26,26 @@
       add();
     };
     window.addEventListener("error", function (e) {
-      var msg = (e && e.message) || (e && e.error && e.error.message) || "";
+      var err = e && e.error;
+      var msg = (e && e.message) || (err && err.message) || "";
       var where = e && e.filename ? (" @ " + e.filename + ":" + e.lineno + ":" + e.colno) : "";
-      var stack = e && e.error && e.error.stack ? ("\n" + String(e.error.stack).split("\n").slice(0, 5).join("\n")) : "";
+      var stack = err && err.stack ? ("\n" + String(err.stack).split("\n").slice(0, 6).join("\n")) : "";
+      // Message-less errors are common in UXP (native/CustomEvent errors arrive with empty
+      // .message and no .error). Dig out whatever IS present so the overlay isn't just "error".
+      if (!msg && !stack) {
+        var extra = [];
+        if (err) {
+          if (err.name) extra.push("name=" + err.name);
+          if (err.code != null) extra.push("code=" + err.code);
+          try { extra.push("err=" + String(err)); } catch (_) {}
+          try {
+            var own = Object.getOwnPropertyNames(err).filter(function (k) { return k !== "stack"; });
+            if (own.length) extra.push("keys={" + own.join(",") + "}");
+          } catch (_) {}
+        }
+        msg = extra.length ? extra.join(" ") : e.type;
+      }
+      try { console.error("[diag] window.error:", msg, where, err || e); } catch (_) {}
       paint("JS ERROR: " + (msg || e.type) + where + stack, "#900", "bottom");
     }, true);
     window.addEventListener("unhandledrejection", function (e) {
