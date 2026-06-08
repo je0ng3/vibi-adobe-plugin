@@ -7,7 +7,7 @@ import { FileCard, type FileEntry } from "./FileCard";
 import { getBalance } from "../jobs/creditClient";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { BrandLockup } from "../brand/Logo";
-import { MAX_AUDIO_BYTES } from "../config";
+import { MAX_AUDIO_BYTES, BILLING_ENABLED } from "../config";
 
 interface Props {
   onSignOut: () => void;
@@ -131,18 +131,21 @@ export function SeparationPanel({ onSignOut }: Props) {
       <header className="panel-header">
         <BrandLockup size={22} />
         <div className="panel-header-right">
-          {balance != null && (
-            <button className="credit-badge credit-badge--button" type="button" onClick={() => setBuyOpen(true)}>
-              {balance} credits +
-            </button>
-          )}
+          {balance != null &&
+            (BILLING_ENABLED ? (
+              <button className="credit-badge credit-badge--button" type="button" onClick={() => setBuyOpen(true)}>
+                {balance} credits +
+              </button>
+            ) : (
+              <span className="credit-badge">{balance} credits</span>
+            ))}
           <sp-button variant="secondary" treatment="outline" size="s" onClick={onSignOut}>
             Sign out
           </sp-button>
         </div>
       </header>
 
-      {buyOpen && (
+      {BILLING_ENABLED && buyOpen && (
         <BuyCreditsModal
           onClose={() => setBuyOpen(false)}
           onCheckout={async (url) => {
@@ -180,7 +183,7 @@ export function SeparationPanel({ onSignOut }: Props) {
               entry={entry}
               onRemove={() => removeEntry(entry.id)}
               onCreditChange={refreshBalance}
-              onBuyCredits={() => setBuyOpen(true)}
+              onBuyCredits={BILLING_ENABLED ? () => setBuyOpen(true) : undefined}
             />
           </li>
         ))}

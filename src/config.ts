@@ -6,5 +6,10 @@ export const BFF_BASE_URL =
     ? __VIBI_BFF_BASE_URL__
     : "http://localhost:8787";
 
+// Payment/top-up gate. Off for the credits-only launch (users spend their signup bonus and
+// nothing more). Flip on by building with VIBI_BILLING_ENABLED=true once Paddle goes live.
+declare const __VIBI_BILLING_ENABLED__: boolean | undefined;
+export const BILLING_ENABLED = __VIBI_BILLING_ENABLED__ === true;
+
 // Reject audio larger than this to avoid out-of-memory on decode/upload.
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024; // 200 MB

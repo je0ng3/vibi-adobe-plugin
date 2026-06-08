@@ -78,6 +78,10 @@ export default defineConfig(({ command }) => {
     // Falls back to localhost (see src/config.ts) when unset, so dev is unchanged.
     define: {
       __VIBI_BFF_BASE_URL__: JSON.stringify(process.env.VIBI_BFF_BASE_URL ?? ""),
+      // Payment/top-up UI is gated off for the credits-only launch. Re-enable by building with
+      // VIBI_BILLING_ENABLED=true once Paddle is live. Defaults to off (unset) so the credit
+      // badge is display-only and the Buy-credits CTAs are hidden.
+      __VIBI_BILLING_ENABLED__: JSON.stringify(process.env.VIBI_BILLING_ENABLED === "true"),
     },
     // Strip console.*/debugger from the production bundle. Adobe Marketplace review rejects
     // production builds that ship developer consoles; dev/UDT builds keep logging for debugging.
