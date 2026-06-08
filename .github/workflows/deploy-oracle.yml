@@ -58,6 +58,12 @@ jobs:
             git reset --hard origin/main
             cd server/deploy/oracle
             docker compose up -d --build
+            # Caddyfile is bind-mounted, so a content-only change doesn't make compose recreate
+            # the caddy container — the running process keeps its old in-memory config. Reload it
+            # explicitly (graceful, no downtime) so Caddyfile edits actually take effect; fall
+            # back to a restart if the admin reload isn't reachable.
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
+              || docker compose restart caddy
             docker image prune -f
         env:
           DEPLOY_PATH: ${{ secrets.ORACLE_DEPLOY_PATH }}
