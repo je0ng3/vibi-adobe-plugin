@@ -129,6 +129,21 @@ button {
   gap: 14px;
 }
 
+.login-legal {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 11px;
+  color: #808080;
+}
+
+.login-legal a {
+  color: #a0a0a0;
+  text-decoration: underline;
+}
+
 .credit-badge {
   /* Match the adjacent Spectrum `sp-button size="s"` (sign out) geometry — height, shape,
      box model, font — so only the color differs. */

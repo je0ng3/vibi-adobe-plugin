@@ -13,3 +13,7 @@ export const BILLING_ENABLED = __VIBI_BILLING_ENABLED__ === true;
 
 // Reject audio larger than this to avoid out-of-memory on decode/upload.
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024; // 200 MB
+
+// Legal pages, surfaced as links before sign-in (marketplace requirement).
+export const PRIVACY_URL = "https://www.vibi.fm/privacy";
+export const TERMS_URL = "https://www.vibi.fm/terms";

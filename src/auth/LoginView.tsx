@@ -3,6 +3,7 @@ import { shell } from "uxp";
 import { saveToken, type AuthToken } from "./tokenStore";
 import { deviceStart, devicePoll, type DeviceStartResponse } from "./bffClient";
 import { BrandMark } from "../brand/Logo";
+import { PRIVACY_URL, TERMS_URL } from "../config";
 
 interface Props {
   onSignedIn: (token: AuthToken) => void;
@@ -134,6 +135,12 @@ export function LoginView({ onSignedIn, notice }: Props) {
       )}
 
       {phase.kind === "error" && <sp-help-text variant="negative">{phase.message}</sp-help-text>}
+
+      <div className="login-legal">
+        <a onClick={() => openBrowser(PRIVACY_URL)}>Privacy Policy</a>
+        <span aria-hidden="true">·</span>
+        <a onClick={() => openBrowser(TERMS_URL)}>Terms of Service</a>
+      </div>
     </div>
   );
 }

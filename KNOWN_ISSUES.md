@@ -1,38 +1,30 @@
 # Unresolved issues
 
-Implemented with a UXP-safe approach and working in the Vite browser preview, but **not yet
-confirmed in a real Premiere Pro panel** (UXP runtime, Premiere 25.6+). The open question for each
-is whether the approach holds in the actual runtime.
+All previously unverified UXP-runtime paths have now been confirmed in a real Premiere Pro panel
+(Premiere 2026 / v26.0). Nothing in the core or output flow is currently unverified.
 
-Already verified in a real panel and removed from this doc: device-code sign-in + `secureStorage`
-token persistence; multipart upload (separation / segment / peaks); audio input
-(file / project / timeline); waveform rendering; stem separation; script edit + audio rebuild;
-mix (`POST /api/v2/mix`); the `audio/audioUrl.ts` registry read path (exercised by mix + export);
-and **Project-panel export** (`importAudioToProject`). What remains is the **playback**,
-**timeline export**, and **billing** surface.
+## Verified in a real Premiere panel
 
-## Implemented but unverified in the real UXP runtime
+Core path: device-code sign-in + Google OAuth + `secureStorage` token persistence; audio input
+(file / project / timeline, incl. `readSelectedAudioClips`); waveform rendering + seek; multipart
+upload (separation / segment / peaks); stem separation; script edit + audio rebuild;
+mix (`POST /api/v2/mix`); the `audio/audioUrl.ts` registry read path.
 
-| Area | Where | What to confirm | Fallback if it breaks |
-|---|---|---|---|
-| In-panel playback (Web Audio) | `audio/player.ts` | `AudioContext` constructs from a click; WAV plays via parsed PCM; volume fader works. | If absent, `playbackSupported()` is false → OS-default-app preview. |
-| Waveform seek | `panels/Waveform.tsx` + `audio/player.ts` | Click / drag on a waveform moves the playback position. | — |
-| OS-default-app preview | `audio/preview.ts` | Temp write + `shell.openPath` / `openExternal` opens the clip in the default audio app. | — |
-| Save dialog | `output/saveFile.ts` | `getFileForSaving` + `file.write` writes to a user-chosen path. | This IS the fallback for the broken `<a download>`. |
-| Stem / mix export to **Timeline** | `host/premiere.ts` (`importAudioToTimeline`) | `appendClipToAudioTrack` lands clips on the active sequence's audio tracks (Project-panel export already verified). | — |
-| Audio-track creation | `host/premiere.ts` (`ensureAudioTracks`) | Which track API exists — `getAudioTrackCount` / `addAudioTrack` / `addTracks` — so time-aligned stems grow onto separate tracks. | Clamp to the last existing track; clear error asking the user to add tracks. |
-| Credits / billing | `jobs/creditClient.ts` + `panels/BuyCreditsModal.tsx` | Badge updates after a separation; insufficient-credits path shows the Buy credits notice; Paddle checkout opens (`shell.openExternal`). | — |
+Output / preview (verified 2026-06-08, real-Premiere manual run):
+- **OS-default-app preview** (`audio/preview.ts`) — temp write + `shell.openPath` opens the clip in
+  the default audio app (manifest `launchProcess.extensions` includes `.wav`).
+- **In-panel playback** (`audio/player.ts`) — play buttons appear only when `playbackSupported()`;
+  otherwise the OS-preview path above is the fallback (by design, not a defect).
+- **Save dialog** (`output/saveFile.ts`) — `getFileForSaving` + `file.write` writes to a
+  user-chosen path; cancel returns false cleanly.
+- **Stem / mix export to Project** (`importAudioToProject`).
+- **Stem / mix export to Timeline** (`host/premiere.ts` `importAudioToTimeline` /
+  `appendClipToAudioTrack` + `ensureAudioTracks`) — clips land on the active sequence's audio
+  tracks; time-aligned stems grow onto separate tracks.
 
-## Verification checklist (remaining)
+## Out of scope for the credits-only launch
 
-1. Stem / mix plays in-panel when `playbackSupported()`; otherwise preview opens the OS default app
-   (`audio/preview.ts`).
-2. Click / drag seek on a waveform moves the playback position; volume fader affects live playback.
-3. Export a stem and the mix to the **Timeline** — confirm `appendClipToAudioTrack`, and that
-   `ensureAudioTracks` grows the sequence enough for time-aligned stems on separate tracks.
-4. Save a stem / mix via the save dialog (`getFileForSaving`).
-5. Credits badge updates after a separation; the insufficient-credits path shows the Buy credits
-   notice and Paddle checkout opens.
-
-Anything that fails here points to the fallback column above.
-</content>
+- **Credits / billing top-up** (`jobs/creditClient.ts` + `panels/BuyCreditsModal.tsx`,
+  Paddle checkout) — payment UI is gated off via the `VIBI_BILLING_ENABLED` build flag for this
+  launch (users spend their signup bonus only). Re-verify the Paddle checkout path when billing
+  is turned back on.
