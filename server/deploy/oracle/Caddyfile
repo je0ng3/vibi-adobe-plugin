@@ -18,5 +18,15 @@ plugin-api.vibi.fm {
 		max_size 400MB
 	}
 
-	encode gzip
+	# 텍스트/JSON 응답만 gzip. 오디오 바이너리(audio/wav: 스템·믹스 다운로드)는 압축 제외 —
+	# UXP 의 fetch 는 gzip 으로 인코딩된(그리고 Content-Length 없이 chunked 로 오는) 바이너리
+	# 본문을 끝까지 읽지 못해 arrayBuffer() 가 영영 멈춘다(throw 도 안 함). 결과: 분리는 ready 인데
+	# 스템 다운로드가 행 → "완료됐는데 결과 안 뜸". WAV 는 gzip 이득도 거의 없어 제외가 맞다.
+	encode {
+		gzip
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+		}
+	}
 }

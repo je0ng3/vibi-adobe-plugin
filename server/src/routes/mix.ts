@@ -46,7 +46,12 @@ mixRoute.post("/api/v2/mix", uploadLimit(MAX_TOTAL_BYTES), requireAuth, mixLimit
       })),
     );
     const wav = await mixAudio(inputs);
-    return new Response(wav, { headers: { "Content-Type": "audio/wav" } });
+    // Explicit Content-Length (non-chunked) + audio excluded from Caddy gzip — UXP's fetch
+    // stalls forever on a chunked/gzip'd binary body. See routes/separation.ts + Caddyfile.
+    const len = (wav as ArrayBuffer | Uint8Array).byteLength;
+    return new Response(wav, {
+      headers: { "Content-Type": "audio/wav", "Content-Length": String(len) },
+    });
   } catch (e) {
     console.error("[mix] failed", e);
     return c.json({ error: "mix_failed" }, 500);
