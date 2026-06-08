@@ -1,8 +1,10 @@
 import { storage } from "uxp";
 import { Project, ClipProjectItem } from "premierepro";
 import type { LoadedAudioSource } from "../input/audioPicker";
-import { extractAudioFromBytes } from "../jobs/extractClient";
 
+// The separation backend only reliably handles these (keep in sync with audioPicker's
+// SUPPORTED_EXTS and the server's util/audioFormat). vibi separates audio only — video clips
+// and other formats are filtered out of the project list and rejected on timeline-add.
 const AUDIO_EXTS = new Set(["m4a", "mp3", "wav"]);
 
 // UXP cannot receive a native drag from Premiere (the host UI's drag payload never reaches
@@ -27,6 +29,7 @@ export async function readSelectedAudioClips(): Promise<LoadedAudioSource[]> {
   const sources: LoadedAudioSource[] = [];
   const seenPaths = new Set<string>();
   const skipped: string[] = [];
+  const nonAudio: string[] = [];
 
   for (const projectItem of projectItems) {
     console.log(
@@ -39,15 +42,27 @@ export async function readSelectedAudioClips(): Promise<LoadedAudioSource[]> {
     seenPaths.add(mediaPath);
 
     const fileName = mediaPath.split(/[\\/]/).pop() ?? "clip";
+    // vibi separates audio only — skip video/unsupported selections instead of extracting.
+    if (!isAudioPath(mediaPath)) {
+      console.log("[premiere] skipping non-audio selection:", fileName);
+      nonAudio.push(fileName);
+      continue;
+    }
     try {
       sources.push(await readMediaToSource(mediaPath));
     } catch (e) {
-      console.log("[premiere] read/extract failed:", e);
+      console.log("[premiere] read failed:", e);
       skipped.push(fileName);
     }
   }
 
   if (sources.length === 0) {
+    if (nonAudio.length > 0) {
+      throw new Error(
+        `"${nonAudio.join(", ")}" isn't a supported audio clip. vibi separates audio only — ` +
+          `select an audio clip (mp3/wav/m4a) in the timeline, then click again.`,
+      );
+    }
     const detail = skipped.length > 0 ? ` (${skipped.join(", ")})` : "";
     throw new Error(`Couldn't read audio from the selection${detail}.`);
   }
@@ -58,22 +73,19 @@ function toArray(x: any): any[] {
   return Array.isArray(x) ? x : x ? [x] : [];
 }
 
-// Read a media file path into a LoadedAudioSource: audio is read directly; video (or any
-// non-audio media) has its audio extracted to mp3 server-side.
+// Read an audio file path into a LoadedAudioSource. Caller must have already confirmed the
+// path is a supported audio file (isAudioPath) — vibi separates audio only, so video/unsupported
+// media is filtered out upstream rather than extracted here.
 async function readMediaToSource(mediaPath: string): Promise<LoadedAudioSource> {
   const fileName = mediaPath.split(/[\\/]/).pop() ?? "clip";
   const ext = mediaPath.toLowerCase().split(".").pop() ?? "";
   const file = await storage.localFileSystem.getEntryWithUrl(`file:${mediaPath}`);
   const raw = await file.read({ format: storage.formats.binary });
-  if (AUDIO_EXTS.has(ext)) {
-    return { bytes: raw, fileName, ext, byteLength: raw.byteLength };
-  }
-  // Video (or other non-audio media): read the bytes locally and upload them so the server
-  // extracts the audio track to mp3. We upload bytes, not the path — the server never opens a
-  // client-supplied path (see extractClient).
-  const bytes = await extractAudioFromBytes(raw, fileName);
-  const base = fileName.replace(/\.[^.]+$/, "");
-  return { bytes, fileName: `${base}.mp3`, ext: "mp3", byteLength: bytes.byteLength };
+  return { bytes: raw, fileName, ext, byteLength: raw.byteLength };
+}
+
+function isAudioPath(mediaPath: string): boolean {
+  return AUDIO_EXTS.has(mediaPath.toLowerCase().split(".").pop() ?? "");
 }
 
 export interface ProjectMediaItem {
@@ -83,8 +95,9 @@ export interface ProjectMediaItem {
 }
 
 // Walk the project's bin tree (no selection API exists for the Project panel) and list every
-// media-backed item with a file path. Used by the in-panel project browser so the user can
-// pick a Project-panel item to import.
+// media-backed item whose source is a supported audio file. Used by the in-panel project
+// browser so the user can pick a Project-panel item to import. Video/unsupported media is
+// excluded — vibi separates audio only.
 export async function listProjectMediaItems(): Promise<ProjectMediaItem[]> {
   const project = await Project.getActiveProject();
   if (!project) throw new Error("Open a project first");
@@ -110,7 +123,8 @@ export async function listProjectMediaItems(): Promise<ProjectMediaItem[]> {
       /* not a clip item */
     }
     if (mediaPath) {
-      if (!seen.has(mediaPath)) {
+      // Audio-only: skip video and unsupported formats so the list shows just what's usable.
+      if (!seen.has(mediaPath) && isAudioPath(mediaPath)) {
         seen.add(mediaPath);
         const name = (item.name as string) || mediaPath.split(/[\\/]/).pop() || mediaPath;
         out.push({ name, mediaPath, ext: mediaPath.toLowerCase().split(".").pop() ?? "" });
