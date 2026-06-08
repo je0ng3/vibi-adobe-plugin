@@ -105,8 +105,12 @@ separationRoute.get("/api/v2/separate/:jobId/stem/:stemId", requireAuth, async (
   if (job.status !== "ready") return c.json({ error: "not_ready" }, 409);
   const bytes = await getStemBytes(jobId, stemId);
   if (!bytes) return c.json({ error: "stem_not_found" }, 404);
+  // Explicit Content-Length so the body isn't chunked — UXP's fetch stalls on a chunked binary
+  // response (it never resolves arrayBuffer()). Pair with the Caddyfile excluding audio/* from
+  // gzip (a compressed binary body has the same effect). See deploy/oracle/Caddyfile.
   return c.body(bytes, 200, {
     "Content-Type": "audio/wav",
+    "Content-Length": String(bytes.byteLength),
     "Content-Disposition": `inline; filename="${stemId}.wav"`,
   });
 });
