@@ -1,0 +1,73 @@
+# Deploy the Hono backend to the Oracle Cloud VM on push to main.
+#
+# The VM already has the repo cloned and runs the app via docker compose
+# (server/deploy/oracle). This job SSHes in, fast-forwards the checkout to origin/main,
+# and rebuilds the containers — the same `git pull && docker compose up -d --build` the
+# README documents, automated.
+#
+# Scoped to server-affecting paths: a client-only push (src/, manifest.json, vite, .ccx)
+# leaves the server image unchanged, so there's nothing to redeploy. Use the "Run workflow"
+# button (workflow_dispatch) to force a deploy regardless.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   ORACLE_SSH_HOST   VM public IP or hostname (e.g. plugin-api.vibi.fm or the raw IP)
+#   ORACLE_SSH_USER   SSH user (e.g. ubuntu)
+#   ORACLE_SSH_KEY    private key (full PEM, including BEGIN/END lines) for that user
+# Optional:
+#   ORACLE_SSH_PORT   SSH port (defaults to 22)
+#   ORACLE_DEPLOY_PATH  repo path on the VM (defaults to ~/vibi-adobe-plugin)
+
+name: Deploy server (Oracle)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-oracle.yml"
+  workflow_dispatch: {}
+
+# Never let two deploys run at once; cancel an in-flight one if a newer push lands.
+concurrency:
+  group: deploy-oracle
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: SSH deploy (git fetch + reset + docker compose up --build)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_SSH_HOST }}
+          username: ${{ secrets.ORACLE_SSH_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          port: ${{ secrets.ORACLE_SSH_PORT || 22 }}
+          command_timeout: 18m
+          envs: DEPLOY_PATH
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${DEPLOY_PATH:-$HOME/vibi-adobe-plugin}"
+            echo "Deploying in $APP_DIR"
+            cd "$APP_DIR"
+            git fetch origin main
+            # Deterministic CD: make the VM checkout exactly match origin/main. plugin.env is
+            # gitignored and the stem buffer is tmpfs, so neither is touched.
+            git reset --hard origin/main
+            cd server/deploy/oracle
+            docker compose up -d --build
+            docker image prune -f
+        env:
+          DEPLOY_PATH: ${{ secrets.ORACLE_DEPLOY_PATH }}
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS https://plugin-api.vibi.fm/healthz; then
+              echo "\nhealthy"; exit 0
+            fi
+            echo "waiting for server to come up ($i/10)…"; sleep 6
+          done
+          echo "health check failed"; exit 1
