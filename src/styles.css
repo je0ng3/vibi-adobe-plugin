@@ -144,6 +144,11 @@ button {
   text-decoration: underline;
 }
 
+/* Breathing room above the "Sign in to continue" copy (~2–3 lines). */
+.login-spacer {
+  height: 48px;
+}
+
 .credit-badge {
   /* Match the adjacent Spectrum `sp-button size="s"` (sign out) geometry — height, shape,
      box model, font — so only the color differs. */

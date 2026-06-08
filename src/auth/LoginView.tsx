@@ -85,6 +85,7 @@ export function LoginView({ onSignedIn, notice }: Props) {
         <p className="login-tagline">AI audio stem separation</p>
       </div>
       {notice && <p className="panel-error">{notice}</p>}
+      <div className="login-spacer" />
       <sp-help-text size="s">
         Sign in to continue. New accounts get free credits to try the plugin.
       </sp-help-text>
