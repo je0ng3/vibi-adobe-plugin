@@ -42,15 +42,9 @@ GCP 엔 불필요 — Debian/Ubuntu 이미지가 호스트 레벨 차단을 안 
      `http-server`/`https-server` 태그를 자동 생성 — 별도 방화벽 작업 불필요)
    - (BFF 와 같은 프로젝트여도 **별도 VM** 으로 — 두 서버가 각각 80/443 을 점유)
 3. **도메인 A 레코드** `plugin-api.vibi.fm` → 예약한 정적 IP (TLS 자동 발급에 필요)
-4. **SSH 접속** (콘솔의 SSH 버튼 또는 `gcloud compute ssh`) 후:
-   ```bash
-   sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
-   sudo usermod -aG docker $USER && newgrp docker
-   git clone <repo> vibi-adobe-plugin && cd vibi-adobe-plugin/server/deploy/gcp
-   cp plugin.env.example plugin.env && vim plugin.env   # 시크릿 채우기 (로컬 server/.env 값 + prod 항목)
-   docker compose up -d --build                 # 첫 빌드 (x86 네이티브)
-   docker compose logs -f server
-   ```
+4. **배포** — 아래 *자동 배포 (CD)* 의 one-time 셋업(SSH 키 + secrets)을 한 번 하면, 이후
+   docker 설치·코드 전송·`docker compose up` 까지 GitHub Actions 가 전부 자동 처리한다.
+   (수동으로 한 번 띄우려면 *수동 배포 (fallback)* 참고.)
 5. **검증**: `curl -i https://plugin-api.vibi.fm/healthz` → `{"ok":true}` 200, 인증서 정상
 6. **외부 콘솔 등록** (도메인 유지 시 기존 값 그대로면 생략 가능):
    - Google OAuth redirect URI: `https://plugin-api.vibi.fm/api/v2/auth/google/callback`
@@ -69,7 +63,34 @@ GCP 엔 불필요 — Debian/Ubuntu 이미지가 호스트 레벨 차단을 안 
 
 ## 자동 배포 (CD)
 
-`.github/workflows/deploy-gcp.yml` 가 main 푸시(server/** 경로) 시 VM 에 SSH 접속해
-`git reset --hard origin/main && docker compose up -d --build` 를 돌린다. 필요한 repo secrets:
-`DEPLOY_SSH_HOST`(정적 IP 또는 도메인), `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`(PEM),
-선택 `DEPLOY_SSH_PORT`(기본 22), `DEPLOY_PATH`(기본 `~/vibi-adobe-plugin`).
+`.github/workflows/deploy-gcp.yml` 가 main 푸시(server/** 경로) 시 **부트스트랩+배포를 전부 자동**으로
+한다. 레포가 private 이라 VM 이 GitHub 에서 클론하지 않고, **Action 러너가 코드를 rsync 로 VM 에
+밀어넣고** plugin.env 는 secret 에서 생성한다 — VM 엔 GitHub 자격증명이 필요 없다.
+
+흐름: checkout → SSH 키 준비 → plugin.env 를 `PLUGIN_ENV` secret 으로 생성 → (없으면 rsync/docker
+설치) → 코드 rsync → `docker compose up -d --build` → healthz 확인.
+
+**one-time 셋업:**
+1. CI 용 SSH 키페어 생성: `ssh-keygen -t ed25519 -f deploy_key -N ""`
+2. **공개키**(`deploy_key.pub`)를 VM 에 등록: 콘솔 → VM → Edit → SSH Keys → Add item
+   (키에 박힌 username 이 `DEPLOY_SSH_USER` 가 된다)
+3. repo secrets 등록 (Settings → Secrets and variables → Actions):
+   - `DEPLOY_SSH_HOST` — 정적 IP 또는 `plugin-api.vibi.fm`
+   - `DEPLOY_SSH_USER` — SSH 사용자(키 username 과 동일)
+   - `DEPLOY_SSH_KEY` — **개인키**(`deploy_key` 전체 내용)
+   - `PLUGIN_ENV` — `plugin.env` 파일 전체 내용(모든 시크릿) ← single source of truth
+   - (선택) `DEPLOY_SSH_PORT`(기본 22), `DEPLOY_PATH`(기본 `~/vibi-adobe-plugin`)
+
+이후엔 main 에 push 하거나 Actions 탭에서 *Run workflow* 만 누르면 배포된다. env 를 바꿀 땐
+`PLUGIN_ENV` secret 만 수정하면 다음 배포에 반영된다(VM 에서 직접 편집 불필요).
+
+## 수동 배포 (fallback)
+
+CD 없이 한 번 띄우려면 SSH 접속 후:
+```bash
+sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker $USER && newgrp docker
+git clone <repo> vibi-adobe-plugin && cd vibi-adobe-plugin/server/deploy/gcp
+cp plugin.env.example plugin.env && vim plugin.env   # 또는 로컬 plugin.env 를 scp
+docker compose up -d --build && docker compose logs -f server
+```

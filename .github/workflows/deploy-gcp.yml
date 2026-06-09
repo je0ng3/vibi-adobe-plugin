@@ -1,21 +1,28 @@
 # Deploy the Hono backend to the GCP Compute Engine VM on push to main.
 #
-# The VM already has the repo cloned and runs the app via docker compose
-# (server/deploy/gcp). This job SSHes in, fast-forwards the checkout to origin/main,
-# and rebuilds the containers — the same `git pull && docker compose up -d --build` the
-# README documents, automated.
+# Fully automated (bootstrap + deploy) — the VM needs NO GitHub credentials and nothing
+# pre-installed. The Action runner checks out the repo, rsyncs it to the VM, materializes
+# plugin.env from a secret, installs docker if missing, and runs docker compose. Because the
+# repo is private, we push code via rsync instead of having the VM clone from GitHub.
 #
 # Scoped to server-affecting paths: a client-only push (src/, manifest.json, vite, .ccx)
-# leaves the server image unchanged, so there's nothing to redeploy. Use the "Run workflow"
-# button (workflow_dispatch) to force a deploy regardless.
+# leaves the server image unchanged. Use "Run workflow" (workflow_dispatch) to force a deploy.
 #
-# Required repository secrets (Settings → Secrets and variables → Actions):
-#   DEPLOY_SSH_HOST   VM static external IP or hostname (e.g. plugin-api.vibi.fm or the raw IP)
-#   DEPLOY_SSH_USER   SSH user (e.g. your gcloud username, or 'ubuntu' on an Ubuntu image)
-#   DEPLOY_SSH_KEY    private key (full PEM, including BEGIN/END lines) for that user
-# Optional:
-#   DEPLOY_SSH_PORT   SSH port (defaults to 22)
-#   DEPLOY_PATH       repo path on the VM (defaults to ~/vibi-adobe-plugin)
+# ── One-time setup ────────────────────────────────────────────────────────────────────────
+# 1. Generate a CI SSH keypair locally:
+#       ssh-keygen -t ed25519 -f deploy_key -N ""
+# 2. Add the PUBLIC key (deploy_key.pub) to the VM:
+#       GCP Console → VM → Edit → SSH Keys → Add item (paste deploy_key.pub)
+#       (the username embedded in the key becomes DEPLOY_SSH_USER)
+# 3. Add these repository secrets (Settings → Secrets and variables → Actions):
+#       DEPLOY_SSH_HOST   VM static external IP or hostname (e.g. plugin-api.vibi.fm)
+#       DEPLOY_SSH_USER   SSH user (matches the key's username, e.g. your gcloud user)
+#       DEPLOY_SSH_KEY    the PRIVATE key (full contents of deploy_key)
+#       PLUGIN_ENV        full contents of server/deploy/gcp/plugin.env (all secrets)
+#    Optional:
+#       DEPLOY_SSH_PORT   SSH port (defaults to 22)
+#       DEPLOY_PATH       repo path on the VM (defaults to ~/vibi-adobe-plugin)
+# After that, every push to main (server/**) deploys automatically.
 
 name: Deploy server (GCP)
 
@@ -32,48 +39,85 @@ concurrency:
   group: deploy-gcp
   cancel-in-progress: false
 
+env:
+  SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '~/vibi-adobe-plugin' }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: SSH deploy (git fetch + reset + docker compose up --build)
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_SSH_HOST }}
-          username: ${{ secrets.DEPLOY_SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          command_timeout: 18m
-          envs: DEPLOY_PATH
-          script_stop: true
-          script: |
-            set -euo pipefail
-            APP_DIR="${DEPLOY_PATH:-$HOME/vibi-adobe-plugin}"
-            echo "Deploying in $APP_DIR"
-            cd "$APP_DIR"
-            git fetch origin main
-            # Deterministic CD: make the VM checkout exactly match origin/main. plugin.env is
-            # gitignored and the stem buffer is tmpfs, so neither is touched.
-            git reset --hard origin/main
-            cd server/deploy/gcp
-            docker compose up -d --build
-            # Caddyfile is bind-mounted, so a content-only change doesn't make compose recreate
-            # the caddy container — the running process keeps its old in-memory config. Reload it
-            # explicitly (graceful, no downtime) so Caddyfile edits actually take effect; fall
-            # back to a restart if the admin reload isn't reachable.
-            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
-              || docker compose restart caddy
-            docker image prune -f
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH key + known_hosts
         env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Materialize plugin.env from secret
+        env:
+          PLUGIN_ENV: ${{ secrets.PLUGIN_ENV }}
+        run: |
+          umask 077
+          printf '%s' "$PLUGIN_ENV" > server/deploy/gcp/plugin.env
+          # Sanity: must be non-empty and look like an env file.
+          test -s server/deploy/gcp/plugin.env || { echo "PLUGIN_ENV secret is empty"; exit 1; }
+
+      - name: Ensure rsync on VM
+        env:
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            'command -v rsync >/dev/null || { sudo apt-get update && sudo apt-get install -y rsync; }'
+
+      - name: Rsync repo to VM
+        env:
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          rsync -az --delete \
+            --exclude='.git/' --exclude='node_modules/' --exclude='dist/' \
+            --exclude='build/' --exclude='server/.data/' \
+            -e "ssh -i ~/.ssh/id_deploy -p $SSH_PORT" \
+            ./ "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Bootstrap docker + docker compose up
+        env:
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            DEPLOY_PATH="$DEPLOY_PATH" 'bash -seuo pipefail' <<'EOSSH'
+          APP_DIR="${DEPLOY_PATH/#\~/$HOME}"
+          # First run only: install docker engine + compose plugin (idempotent afterwards).
+          if ! command -v docker >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y docker.io docker-compose-v2
+          fi
+          cd "$APP_DIR/server/deploy/gcp"
+          # Build + (re)start. sudo because the deploy user may not be in the docker group on
+          # the very first run (group change needs a re-login, which this session predates).
+          sudo docker compose up -d --build
+          # Caddyfile is bind-mounted — content-only changes don't recreate the container, so
+          # reload it explicitly (graceful); fall back to restart if the admin API isn't up yet.
+          sudo docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
+            || sudo docker compose restart caddy
+          sudo docker image prune -f
+          EOSSH
 
       - name: Health check
         run: |
-          for i in $(seq 1 10); do
+          for i in $(seq 1 12); do
             if curl -fsS https://plugin-api.vibi.fm/healthz; then
               echo "\nhealthy"; exit 0
             fi
-            echo "waiting for server to come up ($i/10)…"; sleep 6
+            echo "waiting for server to come up ($i/12)…"; sleep 6
           done
           echo "health check failed"; exit 1
