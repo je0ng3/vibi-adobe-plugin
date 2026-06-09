@@ -57,4 +57,20 @@ declare module "premierepro" {
   export const ClipProjectItem: {
     cast(item: unknown): ClipProjectItemInstance | null;
   };
+  export interface TickTimeInstance {
+    readonly seconds: number;
+  }
+  // Host's Source Monitor — used as the in-panel preview engine when Web Audio is absent.
+  export const SourceMonitor: {
+    openFilePath(nativePath: string): Promise<unknown>;
+    play(speed: number): Promise<unknown>;
+    getPosition(): Promise<TickTimeInstance>;
+    setPosition(position: unknown): Promise<boolean>;
+    closeClip(): Promise<unknown>;
+    closeAllClips(): Promise<unknown>;
+  } | null;
+  export const TickTime: {
+    createWithSeconds(seconds: number): TickTimeInstance;
+    readonly TIME_ZERO: TickTimeInstance;
+  } | null;
 }

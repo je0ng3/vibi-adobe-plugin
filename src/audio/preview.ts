@@ -1,9 +1,10 @@
 import { storage, shell } from "uxp";
 import { audioUrlToBytes } from "./audioUrl";
 
-// UXP can't play audio inside the panel (no Web Audio API, and the <audio> element's play()/pause()
-// don't work — see player.ts / KNOWN_ISSUES). The realistic preview is to write the clip to a temp
-// file and hand it to the OS default audio app. File write + shell-open are supported in UXP.
+// Last-resort preview: hand the clip to the OS default audio app (temp write + shell-open, both
+// supported in UXP). Used only when neither in-panel backend is available — i.e. no AudioContext
+// AND no Source Monitor (see player.ts / sourceMonitorPlayer.ts). In normal Premiere UXP the
+// Source Monitor backend handles preview in-panel, so this path rarely runs.
 export async function previewInDefaultApp(url: string, fileName: string): Promise<void> {
   const bytes = await audioUrlToBytes(url);
   const tmp = await storage.localFileSystem.getTemporaryFolder();

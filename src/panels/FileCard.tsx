@@ -14,6 +14,7 @@ import type { ScriptDraft } from "../types/job";
 import { InsufficientCreditsError } from "../jobs/creditClient";
 import { importAudioToProject, importAudioToTimeline, type AudioToImport } from "../host/premiere";
 import { makeAudioUrl, revokeAudioUrl, audioUrlToBytes } from "../audio/audioUrl";
+import { diag } from "../diag";
 
 type ImportTarget = "project" | "timeline";
 
@@ -175,6 +176,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           ),
       );
       setSeparationJobId(jobId);
+      diag(`FileCard: building ${separated.length} stem view(s)`);
       const stems: StemView[] = await Promise.all(
         separated.map(async (s, idx) => {
           const loaded = await loadPeaks(s.bytes, `${s.label || "stem"}.wav`);
@@ -190,8 +192,10 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           };
         }),
       );
+      diag(`FileCard: setStage done (${stems.length} stems)`);
       setStage({ kind: "done", stems, mix: null });
     } catch (e) {
+      diag(`FileCard ERROR: ${e instanceof Error ? e.message : String(e)}`);
       if (e instanceof InsufficientCreditsError) {
         setStage({
           kind: "error",

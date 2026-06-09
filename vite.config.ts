@@ -71,10 +71,11 @@ export default defineConfig(({ command }) => {
   const isServe = command === "serve";
   // Production = backend URL injected. Used to gate the dev-only on-panel error overlay.
   const isProd = (process.env.VIBI_BFF_BASE_URL ?? "").length > 0;
-  // Debug builds: force the on-panel error overlay + keep console even against a prod backend.
-  // Use to chase a runtime error on the real server: VIBI_DIAG=true VIBI_BFF_BASE_URL=… npm run build
+  // On-panel diagnostics (debug log box + error overlay) are opt-in: only built when VIBI_DIAG=true.
+  // Plain dev/UDT builds no longer show the log box. Turn it on to chase a runtime error:
+  //   VIBI_DIAG=true npm run build  (add VIBI_BFF_BASE_URL=… to debug against the real server)
   // Never ship a VIBI_DIAG build to Marketplace (overlay + console are present).
-  const diag = process.env.VIBI_DIAG === "true" || !isProd;
+  const diag = process.env.VIBI_DIAG === "true";
   return {
     // UXP loads assets relative to the plugin root, not from a web server root.
     base: "./",

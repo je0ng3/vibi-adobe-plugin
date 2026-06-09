@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,13 +25,18 @@ export async function mixAudio(inputs: MixInput[]): Promise<Buffer> {
         return p;
       }),
     );
-    return await ffmpegMix(paths, inputs.map((i) => i.volume));
+    const outPath = join(dir, "out.wav");
+    await ffmpegMix(paths, inputs.map((i) => i.volume), outPath);
+    // Read the finished file back. ffmpeg wrote to a seekable path (not a pipe), so it patched
+    // the RIFF/`data` chunk sizes correctly — a streamed `pipe:1` WAV leaves those as placeholders,
+    // which makes Premiere flag "inconsistent file structure" and disable metadata/playback.
+    return await readFile(outPath);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-function ffmpegMix(paths: string[], volumes: number[]): Promise<Buffer> {
+function ffmpegMix(paths: string[], volumes: number[], outPath: string): Promise<void> {
   const n = paths.length;
   const args: string[] = [];
   for (const p of paths) args.push("-i", p);
@@ -52,13 +57,13 @@ function ffmpegMix(paths: string[], volumes: number[]): Promise<Buffer> {
   for (let i = 0; i < n; i++) filter += `[a${i}]`;
   filter += `amix=inputs=${n}:normalize=0:duration=longest[out]`;
 
-  args.push("-filter_complex", filter, "-map", "[out]", "-ac", "2", "-ar", "48000", "-f", "wav", "pipe:1");
+  // Output to a seekable file (-y to overwrite) rather than pipe:1 so ffmpeg backfills the WAV
+  // header sizes; "-f wav" is implied by the .wav path but kept explicit.
+  args.push("-filter_complex", filter, "-map", "[out]", "-ac", "2", "-ar", "48000", "-f", "wav", "-y", outPath);
 
   return new Promise((resolve, reject) => {
     const proc = spawn(FFMPEG, args);
-    const chunks: Buffer[] = [];
     const errChunks: Buffer[] = [];
-    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
     proc.stderr.on("data", (d: Buffer) => errChunks.push(d));
     proc.on("error", (e) =>
       reject(new Error(`ffmpeg failed to start (is it installed? set FFMPEG_PATH): ${e.message}`)),
@@ -68,7 +73,7 @@ function ffmpegMix(paths: string[], volumes: number[]): Promise<Buffer> {
         reject(new Error(`ffmpeg mix exited ${code}: ${Buffer.concat(errChunks).toString().slice(0, 500)}`));
         return;
       }
-      resolve(Buffer.concat(chunks));
+      resolve();
     });
   });
 }

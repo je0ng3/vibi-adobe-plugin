@@ -29,6 +29,12 @@ function stemPath(jobId: string, stemId: string): string {
   return join(jobDir(jobId), `${stemId}.wav`);
 }
 
+// Absolute on-disk path of a stem. Exposed so the R2 object store can stream the file
+// straight to the bucket (avoiding a full ArrayBuffer load into RAM) on the download path.
+export function stemFilePath(jobId: string, stemId: string): string {
+  return stemPath(jobId, stemId);
+}
+
 export async function putStemBytes(
   jobId: string,
   stemId: string,

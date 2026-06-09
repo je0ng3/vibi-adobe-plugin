@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { currentUser, requireAuth } from "../auth/middleware.js";
 import { createJob, getJob } from "../jobs/jobStore.js";
 import { runDubbingJob, dubStemId, type DubResult } from "../jobs/dubbingJob.js";
-import { getStemBytes } from "../jobs/stemStore.js";
+import { ObjectKey, respondStem } from "./downloadResponder.js";
 import { creditsForDuration, deduct, getBalance } from "../credit/creditStore.js";
 import { ACCEPTED_AUDIO_LABEL, isAcceptedAudioName } from "../util/audioFormat.js";
 import { rateLimit } from "../middleware/rateLimit.js";
@@ -74,10 +74,13 @@ dubbingRoute.get("/api/v2/dub/:jobId/audio/:lang", requireAuth, async (c) => {
   const job = await getJob(jobId);
   if (!job || job.kind !== "dubbing") return c.json({ error: "not_found" }, 404);
   if (job.ownerSub !== user.sub) return c.json({ error: "forbidden" }, 403);
-  const bytes = await getStemBytes(jobId, dubStemId(lang));
-  if (!bytes) return c.json({ error: "audio_not_found" }, 404);
-  return c.body(bytes, 200, {
-    "Content-Type": "audio/mpeg",
-    "Content-Disposition": `inline; filename="dub-${lang}.mp3"`,
+  const stemId = dubStemId(lang);
+  return respondStem(c, {
+    jobId,
+    stemId,
+    objectKey: ObjectKey.dubAudio(jobId, stemId),
+    contentType: "audio/mpeg",
+    downloadFilename: `dub-${lang}.mp3`,
+    notFoundError: "audio_not_found",
   });
 });

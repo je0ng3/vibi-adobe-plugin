@@ -1,0 +1,17 @@
+{
+  "_comment": "vibi-adobe-plugin 의 R2 산출물 TTL. 서버 디스크 cleanup(JOB_TTL_MS, 기본 1h)과 별개로 R2 객체가 무한 누적되지 않게 함. bff 와 버킷을 공유할 수 있어 prefix(separation/, dub/)로 스코프 — bff 객체는 건드리지 않음. 적용: aws s3api put-bucket-lifecycle-configuration --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com --bucket <R2_BUCKET> --lifecycle-configuration file://r2-lifecycle.json (또는 rclone/Cloudflare dashboard).",
+  "Rules": [
+    {
+      "ID": "plugin-separation-7d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "separation/" },
+      "Expiration": { "Days": 7 }
+    },
+    {
+      "ID": "plugin-dub-7d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "dub/" },
+      "Expiration": { "Days": 7 }
+    }
+  ]
+}

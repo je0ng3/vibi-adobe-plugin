@@ -39,3 +39,8 @@ export const ClipProjectItem = {
     return item && (item as FakeClip).__clip ? (item as FakeClip) : null;
   },
 };
+
+// No Source Monitor in the browser preview — Web Audio (AudioContext) handles playback there,
+// so the source-monitor engine stays unavailable and is never selected (see player.ts).
+export const SourceMonitor = null;
+export const TickTime = null;

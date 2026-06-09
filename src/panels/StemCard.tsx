@@ -31,6 +31,7 @@ export function StemCard({
     let raf = 0;
     void play(stem.id, audioUrl, {
       volume: stem.volume,
+      durationSec: stem.durationSec,
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);

@@ -1,14 +1,44 @@
-// Web Audio playback engine. UXP's <audio> element has no working play()/pause()
-// (KNOWN_ISSUES), and the native Premiere preview engine is not reachable from a UXP panel.
-// Web Audio (AudioContext + AudioBufferSourceNode) is the only in-panel playback path — and
-// only when the runtime provides AudioContext (the same API the waveform decoder uses). When
-// it is absent, playbackSupported() is false and the UI hides the play buttons.
+// Playback facade. UXP's <audio> element has no working play()/pause() (KNOWN_ISSUES).
+// Two backends, chosen at runtime and kept behind one interface so the panels don't care:
+//   1. Web Audio (this file) — preferred when the runtime provides AudioContext (browser/dev):
+//      sample-accurate position, live per-stem gain.
+//   2. Source Monitor (sourceMonitorPlayer.ts) — used in Premiere UXP, where AudioContext is
+//      absent: drives the host's own Source Monitor for real sound and polls its playhead so
+//      the panel's progress bar still tracks. playbackSupported() is true if EITHER exists; only
+//      when both are absent do we hide the play buttons and fall back to the OS-default preview.
 //
 // A single shared context plays one clip at a time (preview semantics). A GainNode lets the
 // volume fader affect playback live. Buffers are cached per URL so re-play is instant.
 
 import { parseWav } from "./wav";
 import { audioUrlToBytes } from "./audioUrl";
+import * as videoBackend from "./videoPlayer";
+import * as sourceMonitor from "./sourceMonitorPlayer";
+
+// Backend selection. Web Audio is the preferred in-panel engine (sample-accurate, live gain).
+// When the runtime has no AudioContext (Premiere UXP), play through a hidden <video> element —
+// it emits real sound in-panel and, unlike the Source Monitor, supports live per-stem gain
+// (video.volume). The Source Monitor remains a fallback if <video> is somehow unavailable.
+// All three share the same method signatures, so we dispatch through a single backend handle.
+interface HostBackend {
+  play: (
+    id: string,
+    url: string,
+    opts?: { volume?: number; onEnded?: () => void; durationSec?: number },
+  ) => Promise<number>;
+  stop: () => void;
+  setVolume: (volume: number) => void;
+  getCurrentTime: () => number;
+  seek: (ratio: number) => void;
+  playingId: () => string | null;
+}
+
+function hostBackend(): HostBackend | null {
+  if (audioContextCtor() != null) return null; // Web Audio path handles playback in-process
+  if (videoBackend.supported()) return videoBackend;
+  if (sourceMonitor.supported()) return sourceMonitor;
+  return null;
+}
 
 let ctx: AudioContext | null = null;
 let ctxResolved = false;
@@ -40,7 +70,7 @@ function getCtx(): AudioContext | null {
 }
 
 export function playbackSupported(): boolean {
-  return audioContextCtor() != null;
+  return audioContextCtor() != null || videoBackend.supported() || sourceMonitor.supported();
 }
 
 const bufferCache = new Map<string, AudioBuffer>();
@@ -78,6 +108,8 @@ let currentDuration = 0;
 let endedCb: (() => void) | null = null;
 
 export function playingId(): string | null {
+  const b = hostBackend();
+  if (b) return b.playingId();
   return currentId;
 }
 
@@ -95,6 +127,11 @@ function teardownSource() {
 }
 
 export function stop(): void {
+  const b = hostBackend();
+  if (b) {
+    b.stop();
+    return;
+  }
   teardownSource();
   currentId = null;
   currentUrl = null;
@@ -127,8 +164,10 @@ function startSource(c: AudioContext, buffer: AudioBuffer, offsetSec: number) {
 export async function play(
   id: string,
   url: string,
-  opts?: { volume?: number; onEnded?: () => void },
+  opts?: { volume?: number; onEnded?: () => void; durationSec?: number },
 ): Promise<number> {
+  const b = hostBackend();
+  if (b) return b.play(id, url, opts);
   const c = getCtx();
   if (!c) return 0;
   if (c.state === "suspended") {
@@ -155,11 +194,18 @@ export async function play(
 }
 
 export function setVolume(volume: number): void {
+  const b = hostBackend();
+  if (b) {
+    b.setVolume(volume);
+    return;
+  }
   currentVolume = volume;
   if (gain) gain.gain.value = volume / 100;
 }
 
 export function getCurrentTime(): number {
+  const b = hostBackend();
+  if (b) return b.getCurrentTime();
   const c = getCtx();
   if (!c || !source) return 0;
   return Math.min(currentDuration, startedAtOffset + (c.currentTime - startedAtCtxTime));
@@ -167,6 +213,11 @@ export function getCurrentTime(): number {
 
 // Jump to a position (0..1) within the currently playing clip.
 export function seek(ratio: number): void {
+  const b = hostBackend();
+  if (b) {
+    b.seek(ratio);
+    return;
+  }
   const c = getCtx();
   if (!c || !source || !currentUrl) return;
   const buffer = bufferCache.get(currentUrl);

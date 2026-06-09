@@ -4,7 +4,7 @@ import { createJob, getJob } from "../jobs/jobStore.js";
 import { runSeparationJob, type SeparationResult } from "../jobs/separationJob.js";
 import { assembleDraft } from "../jobs/transcriptJob.js";
 import { getFullAudioSeparationScript } from "../perso/persoClient.js";
-import { getStemBytes } from "../jobs/stemStore.js";
+import { ObjectKey, respondStem } from "./downloadResponder.js";
 import { creditsForDuration, deduct, getBalance } from "../credit/creditStore.js";
 import { ACCEPTED_AUDIO_LABEL, isAcceptedAudioName } from "../util/audioFormat.js";
 import { rateLimit } from "../middleware/rateLimit.js";
@@ -103,14 +103,12 @@ separationRoute.get("/api/v2/separate/:jobId/stem/:stemId", requireAuth, async (
   if (!job || job.kind !== "separation") return c.json({ error: "not_found" }, 404);
   if (job.ownerSub !== user.sub) return c.json({ error: "forbidden" }, 403);
   if (job.status !== "ready") return c.json({ error: "not_ready" }, 409);
-  const bytes = await getStemBytes(jobId, stemId);
-  if (!bytes) return c.json({ error: "stem_not_found" }, 404);
-  // Explicit Content-Length so the body isn't chunked — UXP's fetch stalls on a chunked binary
-  // response (it never resolves arrayBuffer()). Pair with the Caddyfile excluding audio/* from
-  // gzip (a compressed binary body has the same effect). See deploy/oracle/Caddyfile.
-  return c.body(bytes, 200, {
-    "Content-Type": "audio/wav",
-    "Content-Length": String(bytes.byteLength),
-    "Content-Disposition": `inline; filename="${stemId}.wav"`,
+  return respondStem(c, {
+    jobId,
+    stemId,
+    objectKey: ObjectKey.separationStem(jobId, stemId),
+    contentType: "audio/wav",
+    downloadFilename: `${stemId}.wav`,
+    notFoundError: "stem_not_found",
   });
 });

@@ -1237,6 +1237,7 @@ button {
   justify-content: space-between;
   gap: 8px;
   padding-top: 6px;
+  padding-bottom: 12px;
 }
 
 .mix-controls-count {
@@ -1262,6 +1263,25 @@ button {
 /* UXP ignores flex `gap`, so space the header children with explicit margins. */
 .mix-output-badge { margin-left: 8px; }
 .mix-output-info { margin-left: 10px; }
+
+/* Close (✕) pinned to the top-right of the mix card; margin-left:auto pushes it past the info. */
+.mix-output-close {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--spectrum-global-color-gray-600, #909090);
+  cursor: pointer;
+}
+.mix-output-close:hover {
+  background-color: var(--spectrum-global-color-gray-200, #303030);
+  color: var(--spectrum-global-color-gray-900, #ffffff);
+}
 
 .mix-output-badge {
   font-size: 10px;

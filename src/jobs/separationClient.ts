@@ -4,6 +4,7 @@ import { check401 } from "../auth/session";
 import { throwIfInsufficient } from "./creditClient";
 import { newIdempotencyKey } from "./idempotencyKey";
 import { buildMultipart } from "./multipart";
+import { diag } from "../diag";
 import type { ScriptDraft } from "../types/job";
 
 const POLL_INTERVAL_MS = 3000;
@@ -79,6 +80,17 @@ async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuffer> {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`stem fetch failed: ${check401(res.status)}`);
+  // R2 mode: server returns { url } with a presigned R2 URL instead of the bytes. Fetch it
+  // directly WITHOUT the auth header — the presigned URL self-authenticates (SigV4 in the
+  // query), and R2 rejects a request that also carries a Bearer header. Streaming fallback
+  // (no R2 configured) returns the audio bytes inline, so branch on content-type.
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const { url } = (await res.json()) as { url: string };
+    const r2 = await fetch(url);
+    if (!r2.ok) throw new Error(`stem fetch (r2) failed: ${r2.status}`);
+    return r2.arrayBuffer();
+  }
   return res.arrayBuffer();
 }
 
@@ -93,18 +105,25 @@ export async function runSeparation(
   durationMs: number,
   onProgress?: (progress: number, reason: string | null) => void,
 ): Promise<SeparationOutcome> {
+  diag(`separate: POST start (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
   const jobId = await startSeparation(bytes, fileName, durationMs);
+  diag(`separate: jobId=${jobId}`);
   for (let i = 0; i < MAX_POLLS; i++) {
     const st = await pollSeparation(jobId);
     onProgress?.(st.progress, st.progressReason);
+    if (i === 0 || st.status === "ready" || st.status === "failed") {
+      diag(`poll #${i}: ${st.status} ${st.progress}% stems=${st.stems?.length ?? 0}`);
+    }
     if (st.status === "ready") {
+      diag(`ready: fetching ${st.stems.length} stem(s)`);
       const stems = await Promise.all(
-        st.stems.map(async (m) => ({
-          stemId: m.stemId,
-          label: m.label,
-          bytes: await fetchStem(jobId, m.stemId),
-        })),
+        st.stems.map(async (m) => {
+          const b = await fetchStem(jobId, m.stemId);
+          diag(`stem ${m.stemId}: ${(b.byteLength / 1024).toFixed(0)}KB`);
+          return { stemId: m.stemId, label: m.label, bytes: b };
+        }),
       );
+      diag(`runSeparation done: ${stems.length} stem(s)`);
       return { stems, jobId };
     }
     if (st.status === "failed") throw new Error(st.error ?? "Separation failed");

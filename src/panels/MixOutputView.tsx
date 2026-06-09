@@ -43,6 +43,7 @@ export function MixOutputView({
     if (!isActive || !audioUrl) return;
     let raf = 0;
     void play(result.id, audioUrl, {
+      durationSec: result.durationSec,
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);
@@ -108,6 +109,15 @@ export function MixOutputView({
           )}
           <p className="mix-output-meta">{result.stemCount} stems · {sizeMb} MB</p>
         </div>
+        <div
+          className="mix-output-close"
+          role="button"
+          tabIndex={0}
+          aria-label="Discard mix"
+          onClick={onDiscard}
+        >
+          ✕
+        </div>
       </div>
 
       <div className="mix-output-wave">
@@ -135,9 +145,6 @@ export function MixOutputView({
             </div>
           </>
         )}
-        <div className="mix-btn" role="button" tabIndex={0} onClick={onDiscard}>
-          Discard
-        </div>
       </div>
     </div>
   );
