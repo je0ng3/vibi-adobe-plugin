@@ -96,10 +96,15 @@ jobs:
           ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
             DEPLOY_PATH="$DEPLOY_PATH" 'bash -seuo pipefail' <<'EOSSH'
           APP_DIR="${DEPLOY_PATH/#\~/$HOME}"
-          # First run only: install docker engine + compose plugin (idempotent afterwards).
+          # First run only: install Docker Engine + compose plugin (idempotent afterwards).
+          # Use Docker's official script — it installs docker-ce + docker-compose-plugin on both
+          # Debian and Ubuntu. (Debian's apt has no `docker-compose-v2`; that's an Ubuntu-only name.)
           if ! command -v docker >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y docker.io docker-compose-v2
+            curl -fsSL https://get.docker.com | sudo sh
+          fi
+          # Ensure the v2 compose plugin is present (`docker compose ...`).
+          if ! docker compose version >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y docker-compose-plugin
           fi
           cd "$APP_DIR/server/deploy/gcp"
           # Build + (re)start. sudo because the deploy user may not be in the docker group on
