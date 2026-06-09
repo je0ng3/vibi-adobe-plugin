@@ -6,11 +6,16 @@
 // either ships a rejectable .ccx. This script refuses to build unless the release invariants hold,
 // then re-checks the actual dist/ output before declaring success.
 //
-// Usage:  VIBI_BFF_BASE_URL=https://plugin-api.vibi.fm npm run build:release
+// Usage:  npm run build:release            (defaults to the production backend)
+//         VIBI_BFF_BASE_URL=https://… npm run build:release   (override)
 
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+
+// The one production backend. Used when VIBI_BFF_BASE_URL is unset so a bare `npm run
+// package:release` always produces a shippable build; override the env var to target another.
+const DEFAULT_BASE = "https://plugin-api.vibi.fm";
 
 const root = resolve(import.meta.dirname, "..");
 const fail = (msg) => {
@@ -19,14 +24,14 @@ const fail = (msg) => {
 };
 
 // --- pre-flight: environment invariants -------------------------------------------------------
-const base = process.env.VIBI_BFF_BASE_URL ?? "";
-if (!base) fail("VIBI_BFF_BASE_URL is not set — the bundle would point at localhost and the manifest would keep its dev (localhost/http) allowances.");
+const provided = (process.env.VIBI_BFF_BASE_URL ?? "").trim();
+const base = provided || DEFAULT_BASE;
 if (!/^https:\/\//.test(base)) fail(`VIBI_BFF_BASE_URL must be https:// for a shipped build (got "${base}").`);
 if (base.includes("localhost")) fail(`VIBI_BFF_BASE_URL must not be localhost (got "${base}").`);
 if (process.env.VIBI_DIAG) fail("VIBI_DIAG is set — that keeps console logging and turns on the on-panel debug overlay, which Adobe rejects. Unset it for a release build.");
 
-console.log(`▸ release build against ${base}`);
-execSync("vite build", { cwd: root, stdio: "inherit", env: process.env });
+console.log(`▸ release build against ${base}${provided ? "" : " (default)"}`);
+execSync("vite build", { cwd: root, stdio: "inherit", env: { ...process.env, VIBI_BFF_BASE_URL: base } });
 
 // --- post-flight: verify the actual output ----------------------------------------------------
 const manifestPath = resolve(root, "dist/manifest.json");
