@@ -7,9 +7,10 @@ interface Props {
   onRegenerate: () => void;
 }
 
-// Per-speaker colors — muted/desaturated so they stay calm against the dark panel while still
-// telling speakers apart. A speaker reads the same color in the list and in every line tag.
-const SPEAKER_COLORS = ["#5b86a8", "#b0895c", "#6f9e74", "#9a7fa6", "#7f86b0", "#b07f86", "#5f9a93"];
+// Per-speaker colors — primary/success from the design system plus an amber to keep three hues
+// distinct (danger red is avoided to dodge its error semantics). A speaker reads the same color in
+// the list and in every line tag; past the third speaker the palette wraps.
+const SPEAKER_COLORS = ["#644AFF", "#0BC673", "#F0A93D"];
 const colorFor = (index: number) => SPEAKER_COLORS[Math.abs(index) % SPEAKER_COLORS.length];
 
 function formatMs(ms: number): string {
