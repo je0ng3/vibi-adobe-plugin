@@ -10,7 +10,7 @@
   "host": [
     {
       "app": "premierepro",
-      "minVersion": "24.0.0"
+      "minVersion": "26.0.0"
     }
   ],
   "entrypoints": [
@@ -27,7 +27,6 @@
       "domains": [
         "https://plugin-api.vibi.fm",
         "http://localhost:8787",
-        "https://*.r2.cloudflarestorage.com",
         "https://vibi-bff-artifacts.f74c76499fe723473ad30cdc3f2ae339.r2.cloudflarestorage.com"
       ]
     },

@@ -6,6 +6,8 @@
     "dev": "vite",
     "watch": "vite build --watch --mode development",
     "build": "vite build",
+    "build:release": "node scripts/build-release.mjs",
+    "package:release": "node scripts/build-release.mjs && node scripts/package.mjs",
     "package": "node scripts/package.mjs",
     "typecheck": "tsc --noEmit"
   },
