@@ -19,11 +19,11 @@
 plugin-api.vibi.fm {
 	reverse_proxy server:8787
 
-	# 업로드 상한. /mix 의 앱 한도(MAX_TOTAL_BYTES=400MB)와 맞춤 — 더 낮으면 mix 가 Caddy 에서
-	# 잘림. 나머지 라우트는 앱에서 200MB 로 더 빡빡하게 막으므로 이 값은 천장 역할.
+	# 업로드 상한. 앱의 최대 라우트 한도(separation/peaks/transcript = MAX_AUDIO_BYTES 200MB)와 맞춤.
+	# mix/segment 는 클라이언트(패널 내 pure-JS)로 옮겨 업로드 자체가 사라졌으므로 천장이 400→200MB.
 	# Caddy 는 기본 스트리밍(버퍼 0)이라 이 상한까지 메모리 부담 없음.
 	request_body {
-		max_size 400MB
+		max_size 200MB
 	}
 
 	# 텍스트/JSON 응답만 gzip. 오디오 바이너리(audio/wav: 스템·믹스 다운로드)는 압축 제외 —

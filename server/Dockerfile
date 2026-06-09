@@ -2,7 +2,8 @@
 # tsx 로 TS 를 직접 실행(빌드 산출물 없음, tsconfig noEmit) 하므로 별도 컴파일 스테이지 없음.
 # src 의 .ts 를 런타임에 그대로 import → devDependency 인 tsx 도 이미지에 포함해야 함(= 전체 npm ci).
 #
-# ffmpeg/ffprobe: util/mix.ts, util/segment.ts 가 spawn 하므로 런타임 필수.
+# ffmpeg/ffprobe: util/transcode.ts(분리 스템→WAV 정규화), util/peaks.ts(mp3/m4a 디코드)가
+# spawn 하므로 런타임 필수. mix/segment 는 클라(패널 pure-JS)로 이관되어 더는 서버 ffmpeg 미사용.
 # 외부 의존성(Neon Postgres / Perso / Paddle)은 그대로 재사용 — 컴퓨트만 Oracle 로.
 
 # LTS 핀(bookworm) — slim 으로 이미지 축소, ffmpeg 만 apt 로 추가.
