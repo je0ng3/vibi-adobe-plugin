@@ -1,7 +1,7 @@
-# Deploy the Hono backend to the Oracle Cloud VM on push to main.
+# Deploy the Hono backend to the GCP Compute Engine VM on push to main.
 #
 # The VM already has the repo cloned and runs the app via docker compose
-# (server/deploy/oracle). This job SSHes in, fast-forwards the checkout to origin/main,
+# (server/deploy/gcp). This job SSHes in, fast-forwards the checkout to origin/main,
 # and rebuilds the containers — the same `git pull && docker compose up -d --build` the
 # README documents, automated.
 #
@@ -10,26 +10,26 @@
 # button (workflow_dispatch) to force a deploy regardless.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
-#   ORACLE_SSH_HOST   VM public IP or hostname (e.g. plugin-api.vibi.fm or the raw IP)
-#   ORACLE_SSH_USER   SSH user (e.g. ubuntu)
-#   ORACLE_SSH_KEY    private key (full PEM, including BEGIN/END lines) for that user
+#   DEPLOY_SSH_HOST   VM static external IP or hostname (e.g. plugin-api.vibi.fm or the raw IP)
+#   DEPLOY_SSH_USER   SSH user (e.g. your gcloud username, or 'ubuntu' on an Ubuntu image)
+#   DEPLOY_SSH_KEY    private key (full PEM, including BEGIN/END lines) for that user
 # Optional:
-#   ORACLE_SSH_PORT   SSH port (defaults to 22)
-#   ORACLE_DEPLOY_PATH  repo path on the VM (defaults to ~/vibi-adobe-plugin)
+#   DEPLOY_SSH_PORT   SSH port (defaults to 22)
+#   DEPLOY_PATH       repo path on the VM (defaults to ~/vibi-adobe-plugin)
 
-name: Deploy server (Oracle)
+name: Deploy server (GCP)
 
 on:
   push:
     branches: [main]
     paths:
       - "server/**"
-      - ".github/workflows/deploy-oracle.yml"
+      - ".github/workflows/deploy-gcp.yml"
   workflow_dispatch: {}
 
 # Never let two deploys run at once; cancel an in-flight one if a newer push lands.
 concurrency:
-  group: deploy-oracle
+  group: deploy-gcp
   cancel-in-progress: false
 
 jobs:
@@ -40,10 +40,10 @@ jobs:
       - name: SSH deploy (git fetch + reset + docker compose up --build)
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.ORACLE_SSH_HOST }}
-          username: ${{ secrets.ORACLE_SSH_USER }}
-          key: ${{ secrets.ORACLE_SSH_KEY }}
-          port: ${{ secrets.ORACLE_SSH_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           command_timeout: 18m
           envs: DEPLOY_PATH
           script_stop: true
@@ -56,7 +56,7 @@ jobs:
             # Deterministic CD: make the VM checkout exactly match origin/main. plugin.env is
             # gitignored and the stem buffer is tmpfs, so neither is touched.
             git reset --hard origin/main
-            cd server/deploy/oracle
+            cd server/deploy/gcp
             docker compose up -d --build
             # Caddyfile is bind-mounted, so a content-only change doesn't make compose recreate
             # the caddy container — the running process keeps its old in-memory config. Reload it
@@ -66,7 +66,7 @@ jobs:
               || docker compose restart caddy
             docker image prune -f
         env:
-          DEPLOY_PATH: ${{ secrets.ORACLE_DEPLOY_PATH }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
       - name: Health check
         run: |

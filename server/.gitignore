@@ -11,6 +11,6 @@ credentials/
 *.serviceaccount.json
 *-credentials.json
 
-# Oracle deploy — filled secrets, never commit
-deploy/oracle/plugin.env
-deploy/oracle/*.out
+# GCP deploy — filled secrets, never commit
+deploy/gcp/plugin.env
+deploy/gcp/*.out

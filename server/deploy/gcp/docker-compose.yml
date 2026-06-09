@@ -1,11 +1,10 @@
-# vibi-adobe-plugin server — Oracle Cloud Always Free (ARM Ampere A1) 배포.
+# vibi-adobe-plugin server — GCP Compute Engine (e2-micro Free Tier) 배포.
 # vibi-bff 와 완전히 별개의 VM/스택. 같은 패턴(상시기동·TLS·재시작)을 여기서 독립 wire.
 #
 #   server : Hono(Node+tsx) 앱. 호스트에 포트 노출 안 함(expose 만) — Caddy 만 접근.
 #   caddy  : 80/443 종단, Let's Encrypt 자동 TLS, server:8787 로 리버스 프록시.
 #
-# 둘 다 restart: always → reboot/크래시/회수 후 재기동 시 자동 복구
-# (Always Free 회수 자체는 PAYG 전환으로 방지 — README 참고).
+# 둘 다 restart: always → reboot/크래시 후 재기동 시 자동 복구.
 #
 # 기동:  docker compose up -d --build
 # 로그:  docker compose logs -f server
@@ -13,14 +12,14 @@
 
 services:
   server:
-    # ARM VM 에서 직접 빌드 (cross-arch 헤더에이크 없음). context = server/ 루트.
+    # VM 에서 직접 빌드 (e2-micro 는 x86 — cross-arch 없음). context = server/ 루트.
     build:
       context: ../..
       dockerfile: Dockerfile
     image: vibi-plugin-server:local
     env_file:
       - ./plugin.env
-    # plugin.env 보다 우선 — Oracle VM 고정값. 로컬 dev .env 와 충돌 안 나게 여기서 못박음.
+    # plugin.env 보다 우선 — 배포 VM 고정값. 로컬 dev .env 와 충돌 안 나게 여기서 못박음.
     environment:
       NODE_ENV: production
       PORT: "8787"

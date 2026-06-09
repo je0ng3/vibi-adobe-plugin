@@ -13,7 +13,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
  * vibi-bff 의 `ObjectStore.kt` 를 Node 로 포팅한 것 — 동일한 동기/계약을 맞춤.
  *
  * 큰 산출물(separation stem, dub audio)을 R2 에 업로드 후 presigned GET URL 로 302 redirect 해
- * 이 서버가 바이트 전송으로 잠기지 않게 한다. **R2 는 egress 무료** 라 Oracle/임의 호스트의
+ * 이 서버가 바이트 전송으로 잠기지 않게 한다. **R2 는 egress 무료** 라 어느 호스트에서든
  * 아웃바운드 전송 비용이 0 으로 떨어짐 — R2 이주의 핵심 이유.
  *
  * 인증: R2 API token 의 access key + secret (Cloudflare dashboard → R2 → Manage API Tokens,

@@ -4,7 +4,7 @@
 #
 # ffmpeg/ffprobe: util/transcode.ts(분리 스템→WAV 정규화), util/peaks.ts(mp3/m4a 디코드)가
 # spawn 하므로 런타임 필수. mix/segment 는 클라(패널 pure-JS)로 이관되어 더는 서버 ffmpeg 미사용.
-# 외부 의존성(Neon Postgres / Perso / Paddle)은 그대로 재사용 — 컴퓨트만 Oracle 로.
+# 외부 의존성(Neon Postgres / Perso / Paddle / R2)은 그대로 재사용 — 컴퓨트만 이전.
 
 # LTS 핀(bookworm) — slim 으로 이미지 축소, ffmpeg 만 apt 로 추가.
 FROM node:22-bookworm-slim
