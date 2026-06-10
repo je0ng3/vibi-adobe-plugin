@@ -1490,6 +1490,35 @@ button {
 .seg-time { font-size: 10px; color: var(--spectrum-global-color-gray-500, #8d8d8d); }
 .seg-text { font-size: 12px; line-height: 1.35; color: var(--spectrum-global-color-gray-700, #d0d0d0); }
 
+/* Split a line: ✂ toggle on the right, inline time input + actions below the text */
+.seg-split-toggle {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--spectrum-global-color-gray-600, #a0a0a0);
+  cursor: pointer;
+}
+.seg-split { display: flex; align-items: center; margin-top: 4px; }
+.seg-split-input {
+  width: 64px;
+  margin-right: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.seg-split-go,
+.seg-split-cancel {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg-split-go { margin-right: 6px; background: #644aff; color: #fff; }
+.seg-split-go--off { opacity: 0.4; cursor: default; }
+.seg-split-cancel { color: var(--spectrum-global-color-gray-600, #a0a0a0); }
+
 .mix-output-name-input {
   margin: 0;
   width: 100%;
