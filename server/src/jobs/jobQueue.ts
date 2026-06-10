@@ -11,6 +11,9 @@
 // multiple instances, replace this with a shared queue (DB row-lock / Redis).
 
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT_SEPARATIONS) || 2);
+// Cap how many jobs may wait in line. Past this, new submissions are rejected (503) instead of
+// piling up forever — a last-resort guard against unbounded backlog under a request flood.
+const MAX_QUEUE_DEPTH = Math.max(1, Number(process.env.MAX_SEPARATION_QUEUE) || 8);
 
 let active = 0;
 const waiters: Array<() => void> = [];
@@ -41,6 +44,11 @@ export async function runQueued<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
-export function queueDepth(): { active: number; waiting: number; max: number } {
-  return { active, waiting: waiters.length, max: MAX_CONCURRENT };
+/** True when the wait line is already at its cap, so callers should reject rather than enqueue. */
+export function isQueueFull(): boolean {
+  return waiters.length >= MAX_QUEUE_DEPTH;
+}
+
+export function queueDepth(): { active: number; waiting: number; max: number; maxQueue: number } {
+  return { active, waiting: waiters.length, max: MAX_CONCURRENT, maxQueue: MAX_QUEUE_DEPTH };
 }
