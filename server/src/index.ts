@@ -6,10 +6,10 @@ import { authRoute } from "./routes/auth.js";
 import { devicePageRoute } from "./routes/devicePage.js";
 import { separationRoute } from "./routes/separation.js";
 import { peaksRoute } from "./routes/peaks.js";
-import { transcriptRoute } from "./routes/transcript.js";
 import { creditsRoute } from "./routes/credits.js";
 import { paddleRoute } from "./routes/paddle.js";
 import { ensureSchema } from "./db/pool.js";
+import { failStaleJobs } from "./jobs/jobStore.js";
 import { startCleanupSweep } from "./jobs/cleanup.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 
@@ -62,7 +62,6 @@ app.route("/", authRoute);
 app.route("/", devicePageRoute);
 app.route("/", separationRoute);
 app.route("/", peaksRoute);
-app.route("/", transcriptRoute);
 app.route("/", creditsRoute);
 app.route("/", paddleRoute);
 
@@ -71,6 +70,8 @@ const port = Number(process.env.PORT ?? 8787);
 async function main() {
   assertProdConfig(allowed);
   await ensureSchema();
+  const stale = await failStaleJobs();
+  if (stale > 0) console.warn(`[startup] marked ${stale} interrupted job(s) as failed`);
   startCleanupSweep();
   serve({ fetch: app.fetch, port }, (info) => {
     console.log(`vibi plugin server listening on http://localhost:${info.port}`);

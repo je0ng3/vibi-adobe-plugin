@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { query } from "../db/pool.js";
 
-export type JobKind = "transcript" | "separation" | "subtitle" | "dubbing";
+export type JobKind = "separation";
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
 
 export interface Job<T = unknown> {
@@ -92,6 +92,20 @@ export async function updateJob(id: string, patch: Partial<Job>): Promise<void> 
   if (patch.error !== undefined) { sets.push(`error = $${i++}`); params.push(patch.error); }
   if (patch.result !== undefined) { sets.push(`result = $${i++}`); params.push(JSON.stringify(patch.result)); }
   await query(`UPDATE jobs SET ${sets.join(", ")} WHERE id = $1`, params);
+}
+
+/**
+ * On startup, mark any job still left mid-flight ("queued"/"processing") as failed: its driving
+ * promise died with the previous process, so it would otherwise poll forever. Returns the count
+ * marked. (Credits aren't auto-refunded here — the cost isn't persisted on the row — so a restart
+ * mid-job is a known gap; restarts on the single instance are rare.)
+ */
+export async function failStaleJobs(): Promise<number> {
+  const res = await query(
+    `UPDATE jobs SET status = 'failed', error = 'interrupted by server restart', updated_at = now()
+     WHERE status IN ('queued', 'processing')`,
+  );
+  return res.rowCount ?? 0;
 }
 
 /** Delete jobs older than the cutoff; returns the ids removed so callers can drop their stems. */

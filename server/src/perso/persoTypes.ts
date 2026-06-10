@@ -50,15 +50,6 @@ export interface PersoDownloadInfo {
   hasTranslatedVoice?: boolean | null;
 }
 
-export interface PersoTranslateDownloadLinks {
-  audioFile?: {
-    translatedVoiceDownloadLink?: string | null;
-    translatedAudioDownloadLink?: string | null;
-    voiceWithBackgroundAudioDownloadLink?: string | null;
-    voiceAudioDownloadLink?: string | null;
-  } | null;
-}
-
 export interface PersoDownloadPathInfo {
   originalBackgroundPath?: string | null;
 }

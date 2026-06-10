@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { currentUser, requireAuth } from "../auth/middleware.js";
 import { createJob, getJob } from "../jobs/jobStore.js";
 import { runSeparationJob, type SeparationResult } from "../jobs/separationJob.js";
+import { runQueued } from "../jobs/jobQueue.js";
 import { assembleDraft } from "../jobs/transcriptJob.js";
 import { getFullAudioSeparationScript } from "../perso/persoClient.js";
 import { ObjectKey, respondStem } from "./downloadResponder.js";
@@ -57,7 +58,9 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   const { job, created } = await createJob("separation", user.sub, idemKey);
   // Only start the work on first creation; a retry returns the in-flight job's id.
   // Refund the deducted credits if the job fails (see runSeparationJob).
-  if (created) void runSeparationJob(job.id, bytes, file.name || "audio.wav", { ownerSub: user.sub, cost });
+  // runQueued caps how many separations run at once (jobQueue.ts) so a burst can't OOM the
+  // 1GB instance; excess jobs wait with their row left "queued" until a slot frees.
+  if (created) void runQueued(() => runSeparationJob(job.id, bytes, file.name || "audio.wav", { ownerSub: user.sub, cost }));
   return c.json({ jobId: job.id });
 });
 

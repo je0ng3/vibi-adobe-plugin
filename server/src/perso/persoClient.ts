@@ -3,12 +3,10 @@ import {
   PersoApiError,
   type PersoMediaRegistration,
   type PersoProgress,
-  type PersoDownloadInfo,
   type PersoProjectInfo,
   type PersoSasTokenResponse,
   type PersoScriptPage,
   type PersoSeparationDownloadLinks,
-  type PersoTranslateDownloadLinks,
 } from "./persoTypes.js";
 
 async function checkResponse(res: Response): Promise<void> {
@@ -172,60 +170,6 @@ export async function getSeparationDownloadLinks(
     );
     await checkResponse(res);
     return unwrapResult<PersoSeparationDownloadLinks>(await res.json());
-  });
-}
-
-export async function submitTranslate(
-  mediaSeq: number,
-  sourceLanguageCode: string,
-  targetLanguageCodes: string[],
-  numberOfSpeakers: number,
-  title?: string,
-): Promise<number> {
-  return withTransientRetry(`submitTranslate(${mediaSeq})`, async () => {
-    const res = await fetch(
-      `${PERSO_API_BASE}/video-translator/api/v1/projects/spaces/${persoSpaceSeq()}/translate`,
-      {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          mediaSeq,
-          isVideoProject: false,
-          sourceLanguageCode,
-          targetLanguageCodes,
-          numberOfSpeakers,
-          title: title ?? null,
-        }),
-      },
-    );
-    await checkResponse(res);
-    const env = (await res.json()) as { result?: { startGenerateProjectIdList?: number[] } };
-    const first = env.result?.startGenerateProjectIdList?.[0];
-    if (first == null) throw new PersoApiError(500, "empty startGenerateProjectIdList");
-    return first;
-  });
-}
-
-export async function getDownloadInfo(projectSeq: number): Promise<PersoDownloadInfo> {
-  return withTransientRetry(`getDownloadInfo(${projectSeq})`, async () => {
-    const res = await fetch(
-      `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}/download-info`,
-      { method: "GET", headers: authHeaders() },
-    );
-    await checkResponse(res);
-    const env = (await res.json()) as { result?: PersoDownloadInfo } | PersoDownloadInfo;
-    return "result" in env && env.result != null ? env.result : (env as PersoDownloadInfo);
-  });
-}
-
-export async function getTranslateDownloadLinks(projectSeq: number): Promise<PersoTranslateDownloadLinks> {
-  return withTransientRetry(`getTranslateDownloadLinks(${projectSeq})`, async () => {
-    const res = await fetch(
-      `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}/download?target=translatedAudio`,
-      { method: "GET", headers: authHeaders() },
-    );
-    await checkResponse(res);
-    return unwrapResult<PersoTranslateDownloadLinks>(await res.json());
   });
 }
 
