@@ -1,7 +1,11 @@
 import { sign, verify } from "hono/jwt";
 import type { DeviceUser } from "./deviceStore.js";
 
-const TOKEN_TTL_SEC = 60 * 60;
+// 30-day sessions: a 1h token logged editors out mid-task. These access tokens are
+// stateless (no server-side revocation either way), so a longer TTL only widens the
+// validity window — it doesn't add a new revocation gap. Proper refresh-token rotation
+// with revocation is the follow-up; see App.tsx ("Token refresh would need BFF support").
+const TOKEN_TTL_SEC = 30 * 24 * 60 * 60;
 
 // Bind access tokens to a specific issuer + audience so that another artifact signed with
 // the same JWT_SECRET (e.g. the OAuth `state` token in routes/auth.ts) can never be
