@@ -35,9 +35,14 @@ interface SeparationStatus {
   error: string | null;
 }
 
-async function startSeparation(bytes: ArrayBuffer, fileName: string, durationMs: number): Promise<string> {
+async function startSeparation(
+  bytes: ArrayBuffer,
+  fileName: string,
+  durationMs: number,
+  projectId: string | null,
+): Promise<string> {
   const { body, contentType } = buildMultipart(
-    { durationMs: String(durationMs) },
+    { durationMs: String(durationMs), projectId: projectId ?? "" },
     [{ field: "audio", fileName, bytes }],
   );
   console.log("[separate] POST", {
@@ -75,7 +80,7 @@ async function pollSeparation(jobId: string): Promise<SeparationStatus> {
   return (await res.json()) as SeparationStatus;
 }
 
-async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuffer> {
+export async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuffer> {
   const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}/stem/${stemId}`, {
     headers: await authHeader(),
   });
@@ -103,10 +108,11 @@ export async function runSeparation(
   bytes: ArrayBuffer,
   fileName: string,
   durationMs: number,
+  projectId: string | null,
   onProgress?: (progress: number, reason: string | null) => void,
 ): Promise<SeparationOutcome> {
   diag(`separate: POST start (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
-  const jobId = await startSeparation(bytes, fileName, durationMs);
+  const jobId = await startSeparation(bytes, fileName, durationMs, projectId);
   diag(`separate: jobId=${jobId}`);
   for (let i = 0; i < MAX_POLLS; i++) {
     const st = await pollSeparation(jobId);
@@ -130,6 +136,56 @@ export async function runSeparation(
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
   throw new Error("Separation timed out");
+}
+
+// One saved separation as returned by the history list (no stem bytes — fetched on demand).
+export interface SavedSeparation {
+  jobId: string;
+  fileName: string;
+  byteLength: number;
+  durationSec: number;
+  createdAt: number;
+  hasScript: boolean;
+  stems: StemMeta[];
+}
+
+interface SavedSeparationWire {
+  jobId: string;
+  fileName: string | null;
+  byteLength: number | null;
+  durationMs: number | null;
+  createdAt: number;
+  hasScript: boolean;
+  stems: StemMeta[];
+}
+
+// List the signed-in user's saved separations for a project, newest first. Used on sign-in /
+// panel open to rebuild the result cards (the server is the source of truth across devices).
+export async function listSeparations(projectId: string | null): Promise<SavedSeparation[]> {
+  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  const res = await fetch(`${BFF_BASE_URL}/api/v2/separations${qs}`, {
+    headers: await authHeader(),
+  });
+  if (!res.ok) throw new Error(`history list failed: ${check401(res.status)}`);
+  const data = (await res.json()) as { separations: SavedSeparationWire[] };
+  return (data.separations ?? []).map((s) => ({
+    jobId: s.jobId,
+    fileName: s.fileName ?? "audio",
+    byteLength: s.byteLength ?? 0,
+    durationSec: (s.durationMs ?? 0) / 1000,
+    createdAt: s.createdAt,
+    hasScript: s.hasScript,
+    stems: s.stems ?? [],
+  }));
+}
+
+// Permanently delete a saved separation (row + stems on disk and R2). Idempotent server-side.
+export async function deleteSeparation(jobId: string): Promise<void> {
+  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}`, {
+    method: "DELETE",
+    headers: await authHeader(),
+  });
+  if (!res.ok && res.status !== 204) throw new Error(`history delete failed: ${check401(res.status)}`);
 }
 
 // Fetch the diarized script the separation already produced (fast — no separate STT job).

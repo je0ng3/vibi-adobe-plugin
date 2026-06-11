@@ -5,6 +5,8 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -103,6 +105,31 @@ export class ObjectStore {
       ResponseContentDisposition: disposition,
     });
     return getSignedUrl(this.client, cmd, { expiresIn: ttl });
+  }
+
+  /**
+   * Delete every object under [prefix] (e.g. `separation/<jobId>/`). Used to purge a separation's
+   * stems from R2 when its history record is removed. Paginates + batch-deletes; idempotent (a
+   * missing prefix is a no-op). Also drops any matching hot-path cache entries.
+   */
+  async deletePrefix(prefix: string): Promise<void> {
+    let token: string | undefined;
+    do {
+      const list = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+      );
+      const keys = (list.Contents ?? []).map((o) => o.Key).filter((k): k is string => !!k);
+      if (keys.length > 0) {
+        await this.client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+          }),
+        );
+        for (const k of keys) this.uploadedKeys.delete(k);
+      }
+      token = list.IsTruncated ? list.NextContinuationToken : undefined;
+    } while (token);
   }
 
   private async headLength(objectKey: string): Promise<number> {

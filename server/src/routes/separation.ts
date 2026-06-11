@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { currentUser, requireAuth } from "../auth/middleware.js";
-import { createJob, getJob } from "../jobs/jobStore.js";
+import { createJob, getJob, listReadySeparations, deleteJob } from "../jobs/jobStore.js";
+import { purgeSeparationArtifacts } from "../jobs/artifacts.js";
 import { runSeparationJob, type SeparationResult } from "../jobs/separationJob.js";
 import { runQueued, isQueueFull } from "../jobs/jobQueue.js";
 import { assembleDraft } from "../jobs/transcriptJob.js";
@@ -53,7 +54,12 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   // Stable per-submit key (sent by the client) makes the charge + job creation idempotent,
   // so a transport-level retry of this POST can't double-charge or spawn a duplicate job.
   const idemKey = c.req.header("Idempotency-Key") || undefined;
-  const cost = creditsForDuration(Number(form.get("durationMs")) || 0);
+  const durationMs = Number(form.get("durationMs")) || 0;
+  // Which Premiere project this belongs to — scopes the saved-separation history list. The
+  // client sends a stable key (guid/path/name) or "default"; treat blank as null.
+  const projectIdRaw = form.get("projectId");
+  const projectId = typeof projectIdRaw === "string" && projectIdRaw.trim() ? projectIdRaw.trim() : null;
+  const cost = creditsForDuration(durationMs);
   // Flood guard: if the wait line is already at capacity, reject up-front (before charging)
   // rather than let the backlog grow unbounded and OOM the box. Client can retry shortly.
   if (isQueueFull()) {
@@ -62,7 +68,13 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   if (!(await deduct(user.sub, cost, "separation", idemKey))) {
     return c.json({ error: "insufficient_credits", required: cost, balance: await getBalance(user.sub) }, 402);
   }
-  const { job, created } = await createJob("separation", user.sub, idemKey);
+  const { job, created } = await createJob("separation", user.sub, {
+    idempotencyKey: idemKey,
+    projectId,
+    fileName: file.name || "audio.wav",
+    byteLength: file.size,
+    durationMs,
+  });
   // Only start the work on first creation; a retry returns the in-flight job's id.
   if (created) {
     // Spool the upload to a temp file and drop the in-memory buffer immediately, so a job
@@ -86,6 +98,17 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   return c.json({ jobId: job.id });
 });
 
+// A user's saved separations for the open Premiere project, newest first. The panel calls this
+// on sign-in / open to rebuild the result cards (then fetches each stem on demand). `projectId`
+// omitted → the "default" (no-project) bucket.
+separationRoute.get("/api/v2/separations", requireAuth, async (c) => {
+  const user = currentUser(c);
+  const projectIdRaw = c.req.query("projectId");
+  const projectId = projectIdRaw && projectIdRaw.trim() ? projectIdRaw.trim() : null;
+  const separations = await listReadySeparations(user.sub, projectId);
+  return c.json({ separations });
+});
+
 separationRoute.get("/api/v2/separate/:jobId", requireAuth, async (c) => {
   const user = currentUser(c);
   const job = await getJob(c.req.param("jobId") ?? "");
@@ -100,6 +123,20 @@ separationRoute.get("/api/v2/separate/:jobId", requireAuth, async (c) => {
     stems: result?.stems ?? [],
     error: job.error ?? null,
   });
+});
+
+// Forget a saved separation: remove the row and purge its stems (disk + R2). The user removes
+// a card explicitly, so this permanently deletes the (paid) result rather than just hiding it.
+separationRoute.delete("/api/v2/separate/:jobId", requireAuth, async (c) => {
+  const user = currentUser(c);
+  const jobId = c.req.param("jobId") ?? "";
+  const job = await getJob(jobId);
+  // Already gone → 204 (idempotent). Someone else's job → 403, don't reveal existence further.
+  if (!job || job.kind !== "separation") return c.body(null, 204);
+  if (job.ownerSub !== user.sub) return c.json({ error: "forbidden" }, 403);
+  await deleteJob(jobId, user.sub);
+  await purgeSeparationArtifacts(jobId);
+  return c.body(null, 204);
 });
 
 // The diarized script the separation already produced — fetched on demand for "Check script".

@@ -105,12 +105,24 @@ export async function ensureSchema(): Promise<void> {
       result          JSONB,
       error           TEXT,
       idempotency_key TEXT,
+      -- Separation history: the Premiere project a job belongs to, plus enough metadata to
+      -- render the restored card (name / size / duration) without the original audio.
+      project_id      TEXT,
+      file_name       TEXT,
+      byte_length     BIGINT,
+      duration_ms     INTEGER,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
-    -- Existing deployments: add the column if the table predates it.
+    -- Existing deployments: add the columns if the table predates them.
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id  TEXT;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS file_name   TEXT;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS byte_length BIGINT;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
     CREATE INDEX IF NOT EXISTS jobs_created_at_idx ON jobs (created_at);
+    -- Lists a user's saved separations for the open project, newest first.
+    CREATE INDEX IF NOT EXISTS jobs_history_idx ON jobs (owner_sub, project_id, kind, status, created_at);
     -- Unique index (not column constraint) so a client retry resolves to the same job;
     -- multiple NULLs are allowed, so key-less submits are unaffected.
     CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency_key_idx ON jobs (idempotency_key);

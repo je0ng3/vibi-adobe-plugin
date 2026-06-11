@@ -59,5 +59,7 @@ export async function respondStem(
  */
 export const ObjectKey = {
   separationStem: (jobId: string, stemId: string): string => `separation/${jobId}/${stemId}.wav`,
+  // All of a separation's stems share this prefix — used to purge them from R2 in one sweep.
+  separationPrefix: (jobId: string): string => `separation/${jobId}/`,
   dubAudio: (jobId: string, stemId: string): string => `dub/${jobId}/${stemId}.mp3`,
 };

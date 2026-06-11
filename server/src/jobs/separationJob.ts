@@ -8,7 +8,9 @@ import {
 } from "../perso/persoClient.js";
 import { extractTar } from "../perso/tar.js";
 import { updateJob } from "./jobStore.js";
-import { putStemBytes } from "./stemStore.js";
+import { putStemBytes, stemFilePath } from "./stemStore.js";
+import { objectStore } from "./objectStore.js";
+import { ObjectKey } from "../routes/downloadResponder.js";
 import { transcodeToWav } from "../util/transcode.js";
 import { refund, type BillingRef } from "../credit/creditStore.js";
 
@@ -89,6 +91,17 @@ export async function runSeparationJob(
         stems.push({ stemId: "background", label: "Background" });
       } catch (e) {
         console.warn("[separation] background download failed, continuing:", e);
+      }
+    }
+
+    // Push stems to R2 now (not only lazily on first download) so the separation survives as
+    // durable history: the local disk copy is cleaned after JOB_TTL_MS, but R2 keeps the bytes
+    // (egress-free) for the panel to restore on any later sign-in. No-op without R2 configured.
+    if (objectStore) {
+      for (const s of stems) {
+        await objectStore
+          .uploadIfAbsent(ObjectKey.separationStem(jobId, s.stemId), stemFilePath(jobId, s.stemId), "audio/wav")
+          .catch((e) => console.warn(`[separation] R2 upload ${s.stemId} failed:`, e));
       }
     }
 
