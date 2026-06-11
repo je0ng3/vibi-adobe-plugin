@@ -511,6 +511,64 @@ function placeClipViaEditor(
   if (ok === false) throw new Error("executeTransaction returned false (host rejected the placement)");
 }
 
+// Compare media paths tolerantly: case-insensitive, separator-agnostic (Premiere may echo a
+// path back with different slashes/casing than the native path we wrote).
+function normPath(p: string): string {
+  return p.toLowerCase().replace(/\\/g, "/");
+}
+function baseName(p: string): string {
+  return p.split(/[\\/]/).pop() ?? p;
+}
+
+// project.importFiles() returns a boolean success flag, NOT the imported ProjectItems. Resolve
+// the actual ClipProjectItems by walking the project tree and matching each item's media path
+// against the temp `paths` we just imported (exact normalized path first, basename as fallback).
+// Returns one slot per input path (aligned by index); a slot is null if no match was found.
+async function findProjectItemsByPath(project: any, paths: string[]): Promise<any[]> {
+  const byPath = new Map<string, number>();
+  const byBase = new Map<string, number>();
+  paths.forEach((p, i) => {
+    byPath.set(normPath(p), i);
+    byBase.set(normPath(baseName(p)), i);
+  });
+  const found: any[] = new Array(paths.length).fill(null);
+
+  const root = await project.getRootItem();
+  async function walk(item: any, depth: number): Promise<void> {
+    if (!item || depth > 10) return;
+    let mediaPath: string | undefined;
+    try {
+      const clip = ClipProjectItem?.cast?.(item) as unknown as {
+        getMediaFilePath?: () => Promise<string>;
+      } | null;
+      if (clip && typeof clip.getMediaFilePath === "function") {
+        const p = await clip.getMediaFilePath();
+        if (p) mediaPath = String(p);
+      }
+    } catch {
+      /* not a clip item */
+    }
+    if (mediaPath) {
+      let idx = byPath.get(normPath(mediaPath));
+      if (idx == null) idx = byBase.get(normPath(baseName(mediaPath)));
+      if (idx != null && !found[idx]) found[idx] = item;
+      return;
+    }
+    for (const accessor of ["getItems", "getChildren", "getSubClips"]) {
+      if (typeof item[accessor] === "function") {
+        try {
+          for (const kid of toArray(await item[accessor]())) await walk(kid, depth + 1);
+        } catch {
+          /* ignore */
+        }
+        break;
+      }
+    }
+  }
+  await walk(root, 0);
+  return found;
+}
+
 // Import into the Project panel AND drop each clip onto the active sequence at a chosen position:
 // `atSeconds` (the originally-selected timeline clip's start) when provided, else the playhead.
 // Each clip goes on its own freshly-added audio track so it overlaps the original in time without
@@ -522,8 +580,15 @@ export async function importAudioToTimeline(items: AudioToImport[], atSeconds?: 
   const sequence = await project.getActiveSequence();
   if (!sequence) throw new Error("Open a sequence in the timeline first");
   const paths = await Promise.all(items.map((i) => writeAudioToTemp(i.fileName, i.bytes)));
-  const projectItems = await project.importFiles(paths);
-  console.log(`[premiere] importAudioToTimeline: imported ${projectItems?.length} item(s), atSeconds=${atSeconds}`);
+  // importFiles returns a boolean, not the items — resolve the real ProjectItems by media path.
+  // The result is aligned with `items` by index; a slot is null if its item couldn't be matched.
+  await project.importFiles(paths);
+  const projectItems = await findProjectItemsByPath(project, paths);
+  const resolvedCount = projectItems.filter(Boolean).length;
+  console.log(`[premiere] importAudioToTimeline: imported ${resolvedCount}/${paths.length} item(s), atSeconds=${atSeconds}`);
+  if (resolvedCount === 0) {
+    throw new Error("Imported to the Project panel, but couldn't locate the items to place on the timeline.");
+  }
 
   const seq = sequence as unknown as AnySequence;
   const time = await placementTime(sequence, atSeconds);
@@ -532,13 +597,20 @@ export async function importAudioToTimeline(items: AudioToImport[], atSeconds?: 
   // Reserve fresh tracks above the existing ones so placement is non-destructive.
   const before = await audioTrackCount(seq);
   const baseIndex = before ?? 0;
-  const after = await ensureAudioTracks(seq, baseIndex + projectItems.length);
+  const after = await ensureAudioTracks(seq, baseIndex + resolvedCount);
   console.log(`[premiere] audio tracks before=${before} after=${after} baseIndex=${baseIndex}`);
 
+  let placed = 0; // each resolved item lands on its own fresh track (baseIndex + placed)
   for (let i = 0; i < projectItems.length; i++) {
-    const audioTrackIndex = baseIndex + i;
+    const projectItem = projectItems[i];
+    if (!projectItem) {
+      console.log(`[premiere] no ProjectItem matched for "${items[i].fileName}" — skipping placement`);
+      continue;
+    }
+    const audioTrackIndex = baseIndex + placed;
     try {
-      placeClipViaEditor(project, sequence, projectItems[i], time, audioTrackIndex);
+      placeClipViaEditor(project, sequence, projectItem, time, audioTrackIndex);
+      placed++;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(
