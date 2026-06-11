@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ScriptDraft, TranscriptSegment } from "../types/job";
 
 interface Props {
@@ -19,7 +19,7 @@ function formatMs(ms: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-// Parse a user-typed split point into ms. Accepts "mm:ss", "mm:ss.s", or bare seconds ("9.5").
+// Parse a user-typed time into ms. Accepts "mm:ss", "mm:ss.s", or bare seconds ("9.5").
 function parseTimeToMs(input: string): number | null {
   const t = input.trim();
   if (!t) return null;
@@ -38,14 +38,35 @@ function parseTimeToMs(input: string): number | null {
 }
 
 // Controlled inline editor: the working draft lives in the parent (FileCard) so the panel can be
-// collapsed/expanded without losing edits. Rename / add / remove speakers and reassign each line's
-// speaker by tapping its colored tag (no <select>/<textarea> — UXP doesn't render those reliably).
+// collapsed/expanded without losing edits. Edit lines like a text editor — type to fix the text,
+// press Enter mid-line to split a line in two (the split time is interpolated from where the caret
+// sits in the text), and Backspace at the very start of a line to merge it back into the line above.
+// The start time of each line is tappable for fine-tuning, since the caret-ratio split is only an
+// estimate. Rename / add / remove speakers and reassign a line by tapping its colored tag.
+// (No <select>/<textarea> — UXP doesn't render those reliably; plain <input> is fine.)
 export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
   const canRemove = draft.speakers.length > 1;
-  // Which line is being split, and the typed split point. Local UI state — the split itself just
-  // edits the draft (two segments in place of one), so nothing here needs to leave the component.
-  const [splitId, setSplitId] = useState<string | null>(null);
-  const [splitInput, setSplitInput] = useState("");
+  // Which line's start time is being edited, and the typed value. Local UI state.
+  const [editTimeId, setEditTimeId] = useState<string | null>(null);
+  const [timeInput, setTimeInput] = useState("");
+
+  // After a split/merge we want the caret to land in the right line at the join point. We keep refs
+  // to each line's text input and apply the focus once the draft has re-rendered.
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [pendingFocus, setPendingFocus] = useState<{ id: string; offset: number } | null>(null);
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const el = inputRefs.current[pendingFocus.id];
+    if (el) {
+      el.focus();
+      try {
+        el.setSelectionRange(pendingFocus.offset, pendingFocus.offset);
+      } catch {
+        /* selection API may be unavailable; focus alone is enough */
+      }
+    }
+    setPendingFocus(null);
+  }, [pendingFocus]);
 
   function renameSpeaker(index: number, label: string) {
     onChange({ ...draft, speakers: draft.speakers.map((sp) => (sp.index === index ? { ...sp, label } : sp)) });
@@ -74,20 +95,81 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
     onChange({ ...draft, segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, speakerIndex: next } : s)) });
   }
 
-  // Open the inline split editor on a line, prefilled with its midpoint as a sensible default.
-  function openSplit(seg: TranscriptSegment) {
-    setSplitInput(formatMs(Math.round((seg.startMs + seg.endMs) / 2)));
-    setSplitId(seg.id);
+  function setSegmentText(seg: TranscriptSegment, text: string) {
+    onChange({ ...draft, segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, text } : s)) });
   }
 
-  // Split one line at `atMs` into two: the first keeps the text, the second starts empty and stays
-  // on the same speaker until the user taps its tag to reassign. Order is preserved in the list.
-  function splitSegment(seg: TranscriptSegment, atMs: number) {
-    if (atMs <= seg.startMs || atMs >= seg.endMs) return;
-    const first: TranscriptSegment = { ...seg, endMs: atMs };
-    const second: TranscriptSegment = { ...seg, id: `${seg.id}-s${atMs}`, startMs: atMs, text: "" };
+  // Split one line at the caret into two. The split time is interpolated from the caret's position
+  // in the text (caret / length of its time span) — there's no per-character timing, so the text
+  // length is the best proxy. The first half keeps the text before the caret, the second the rest;
+  // both stay on the same speaker until the user taps the new line's tag. Caret lands at the start
+  // of the second line so typing flows on.
+  function splitAtCaret(seg: TranscriptSegment, caret: number) {
+    const len = seg.text.length;
+    if (caret <= 0 || caret >= len) return; // nothing meaningful to split off
+    const ratio = caret / len;
+    let atMs = Math.round(seg.startMs + ratio * (seg.endMs - seg.startMs));
+    atMs = Math.min(Math.max(atMs, seg.startMs + 1), seg.endMs - 1);
+    const first: TranscriptSegment = { ...seg, endMs: atMs, text: seg.text.slice(0, caret) };
+    const secondId = `${seg.id}-s${atMs}`;
+    const second: TranscriptSegment = { ...seg, id: secondId, startMs: atMs, text: seg.text.slice(caret) };
     onChange({ ...draft, segments: draft.segments.flatMap((s) => (s.id === seg.id ? [first, second] : [s])) });
-    setSplitId(null);
+    setPendingFocus({ id: secondId, offset: 0 });
+  }
+
+  // Merge a line into the one above it: the previous line's audio is extended to cover this line's
+  // span and the texts are joined. Speaker of the previous line wins (we merge regardless of who
+  // spoke). The caret lands at the seam. No-op on the first line (nothing above to merge into).
+  function mergeIntoPrev(seg: TranscriptSegment) {
+    const idx = draft.segments.findIndex((s) => s.id === seg.id);
+    if (idx <= 0) return;
+    const prev = draft.segments[idx - 1];
+    const merged: TranscriptSegment = { ...prev, endMs: seg.endMs, text: prev.text + seg.text };
+    const segments = draft.segments
+      .filter((_, i) => i !== idx)
+      .map((s) => (s.id === prev.id ? merged : s));
+    onChange({ ...draft, segments });
+    setPendingFocus({ id: prev.id, offset: prev.text.length });
+  }
+
+  function onTextKeyDown(e: React.KeyboardEvent<HTMLInputElement>, seg: TranscriptSegment) {
+    const el = e.currentTarget;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const caret = el.selectionStart ?? seg.text.length;
+      splitAtCaret(seg, caret);
+      return;
+    }
+    if (e.key === "Backspace" && el.selectionStart === 0 && el.selectionEnd === 0) {
+      e.preventDefault();
+      mergeIntoPrev(seg);
+    }
+  }
+
+  function openTime(seg: TranscriptSegment) {
+    setTimeInput(formatMs(seg.startMs));
+    setEditTimeId(seg.id);
+  }
+
+  // Commit an edited start time. The start of a line is the boundary it shares with the line above,
+  // so moving it drags the previous line's end with it (clamped inside both lines).
+  function commitTime(seg: TranscriptSegment) {
+    const atMs = parseTimeToMs(timeInput);
+    setEditTimeId(null);
+    if (atMs === null) return;
+    const idx = draft.segments.findIndex((s) => s.id === seg.id);
+    const prev = idx > 0 ? draft.segments[idx - 1] : null;
+    const lower = prev ? prev.startMs + 1 : 0;
+    const upper = seg.endMs - 1;
+    const clamped = Math.min(Math.max(atMs, lower), upper);
+    onChange({
+      ...draft,
+      segments: draft.segments.map((s) => {
+        if (s.id === seg.id) return { ...s, startMs: clamped };
+        if (prev && s.id === prev.id) return { ...s, endMs: clamped };
+        return s;
+      }),
+    });
   }
 
   const labelFor = (index: number) => draft.speakers.find((sp) => sp.index === index)?.label || `화자 ${index}`;
@@ -125,14 +207,40 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
         + Add speaker
       </div>
 
-      {/* Lines: tap the colored tag to reassign the speaker; tap ✂ to split the line in two */}
-      <p className="seg-hint">Tap a name tag to reassign a line. Tap ✂ to split a line at a time, then reassign each half.</p>
+      {/* Lines: edit text directly; Enter mid-line splits, Backspace at the start merges up; tap the
+          time to fine-tune the split, tap the colored tag to reassign the speaker. */}
+      <p className="seg-hint">
+        대사를 눌러 바로 수정 · 중간에서 Enter로 분리 · 맨 앞에서 ⌫로 이전 줄에 합치기 · 시간을 눌러 미세조정
+      </p>
       <ul className="seg-list">
-        {draft.segments.map((seg) => {
-          const atMs = splitId === seg.id ? parseTimeToMs(splitInput) : null;
-          const splitValid = atMs !== null && atMs > seg.startMs && atMs < seg.endMs;
-          return (
-            <li className="seg-row" key={seg.id}>
+        {draft.segments.map((seg) => (
+          <li className="seg-row" key={seg.id}>
+            {editTimeId === seg.id ? (
+              <input
+                className="seg-time-input"
+                type="text"
+                value={timeInput}
+                placeholder="mm:ss"
+                autoFocus
+                onChange={(e) => setTimeInput(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTime(seg);
+                  else if (e.key === "Escape") setEditTimeId(null);
+                }}
+                onBlur={() => commitTime(seg)}
+              />
+            ) : (
+              <span
+                className="seg-time"
+                role="button"
+                tabIndex={0}
+                title="Tap to adjust the start time"
+                onClick={() => openTime(seg)}
+              >
+                {formatMs(seg.startMs)}
+              </span>
+            )}
+            <div className="seg-main">
               <div
                 className="seg-tag"
                 role="button"
@@ -143,46 +251,20 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
               >
                 {labelFor(seg.speakerIndex)}
               </div>
-              <div className="seg-body">
-                <span className="seg-time">{formatMs(seg.startMs)}</span>
-                {seg.text ? <span className="seg-text">{seg.text}</span> : null}
-                {splitId === seg.id ? (
-                  <div className="seg-split">
-                    <input
-                      className="seg-split-input"
-                      type="text"
-                      value={splitInput}
-                      placeholder="mm:ss"
-                      onChange={(e) => setSplitInput(e.currentTarget.value)}
-                    />
-                    <div
-                      className={`seg-split-go${splitValid ? "" : " seg-split-go--off"}`}
-                      role="button"
-                      tabIndex={splitValid ? 0 : -1}
-                      title={splitValid ? "Split here" : "Pick a time inside this line"}
-                      onClick={splitValid ? () => splitSegment(seg, atMs as number) : undefined}
-                    >
-                      Split
-                    </div>
-                    <div className="seg-split-cancel" role="button" tabIndex={0} onClick={() => setSplitId(null)}>
-                      Cancel
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <div
-                className="seg-split-toggle"
-                role="button"
-                tabIndex={0}
-                aria-label="Split this line"
-                title="Split this line"
-                onClick={() => (splitId === seg.id ? setSplitId(null) : openSplit(seg))}
-              >
-                ✂
-              </div>
-            </li>
-          );
-        })}
+              <input
+                className="seg-text-input"
+                type="text"
+                ref={(el) => {
+                  inputRefs.current[seg.id] = el;
+                }}
+                value={seg.text}
+                placeholder="빈 줄 — 대사를 입력하세요"
+                onChange={(e) => setSegmentText(seg, e.currentTarget.value)}
+                onKeyDown={(e) => onTextKeyDown(e, seg)}
+              />
+            </div>
+          </li>
+        ))}
       </ul>
 
       <div className="script-editor-actions">
