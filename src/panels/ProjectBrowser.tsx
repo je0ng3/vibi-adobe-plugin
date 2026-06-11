@@ -16,6 +16,8 @@ export function ProjectBrowser({ onClose, onImport }: Props) {
   const [items, setItems] = useState<ProjectMediaItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPath, setBusyPath] = useState<string | null>(null);
+  // Progress text while a video item's audio is extracted (Adobe Media Encoder).
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     listProjectMediaItems()
@@ -25,14 +27,16 @@ export function ProjectBrowser({ onClose, onImport }: Props) {
 
   async function pick(item: ProjectMediaItem) {
     setError(null);
+    setStatus(null);
     setBusyPath(item.mediaPath);
     try {
-      const src = await importProjectMediaItem(item.mediaPath);
+      const src = await importProjectMediaItem(item.mediaPath, setStatus);
       onImport([src]);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusyPath(null);
+      setStatus(null);
     }
   }
 
@@ -48,9 +52,10 @@ export function ProjectBrowser({ onClose, onImport }: Props) {
       </div>
 
       {error && <p className="panel-error">{error}</p>}
+      {status && <p className="panel-status">{status}</p>}
       {!items && !error && <p className="proj-browser-info">Loading project items…</p>}
       {items && items.length === 0 && (
-        <p className="proj-browser-info">No audio media found in this project.</p>
+        <p className="proj-browser-info">No audio or video media found in this project.</p>
       )}
 
       {items && items.length > 0 && (

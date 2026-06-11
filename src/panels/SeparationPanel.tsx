@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { shell } from "uxp";
 import { pickAudiosFromOs, SUPPORTED_EXTS, type LoadedAudioSource } from "../input/audioPicker";
-import { readSelectedAudioClips } from "../host/premiere";
+import { readSelectedAudioClips, getActiveProjectKey } from "../host/premiere";
+import { listSeparations } from "../jobs/separationClient";
 import { ProjectBrowser } from "./ProjectBrowser";
 import { FileCard, type FileEntry } from "./FileCard";
 import { getBalance } from "../jobs/creditClient";
@@ -17,9 +18,12 @@ export function SeparationPanel({ onSignOut }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
+  // Transient progress while a video clip's audio is extracted via Adobe Media Encoder.
+  const [pickStatus, setPickStatus] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [projectKey, setProjectKey] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function refreshBalance() {
@@ -34,6 +38,35 @@ export function SeparationPanel({ onSignOut }: Props) {
     refreshBalance();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  // Rehydrate this project's saved separations so signing out and back in (or reopening the
+  // panel — even on another machine) restores the cards. The server is the source of truth: it
+  // keeps the separation rows + R2 stems, scoped to the active Premiere project.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const key = await getActiveProjectKey();
+      if (cancelled) return;
+      setProjectKey(key);
+      try {
+        const saved = await listSeparations(key);
+        if (cancelled || saved.length === 0) return;
+        // entry id = jobId so a restored card maps 1:1 to its server record.
+        const restored: FileEntry[] = saved.map((s) => ({ id: s.jobId, source: null, restored: s }));
+        // Restored cards go below anything the user already added in this brief window, and we
+        // skip any id that's somehow already present.
+        setEntries((prev) => {
+          const have = new Set(prev.map((e) => e.id));
+          return [...prev, ...restored.filter((e) => !have.has(e.id))];
+        });
+      } catch (e) {
+        console.warn("[history] load failed:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -66,13 +99,14 @@ export function SeparationPanel({ onSignOut }: Props) {
     setPickError(null);
     setPickerBusy(true);
     try {
-      const sources = await pickAudiosFromOs();
+      const sources = await pickAudiosFromOs({ onStatus: setPickStatus });
       if (sources.length === 0) return;
       addEntries(sources);
     } catch (e) {
       setPickError(e instanceof Error ? e.message : String(e));
     } finally {
       setPickerBusy(false);
+      setPickStatus(null);
     }
   }
 
@@ -81,7 +115,7 @@ export function SeparationPanel({ onSignOut }: Props) {
     setPickError(null);
     setPickerBusy(true);
     try {
-      const sources = await readSelectedAudioClips();
+      const sources = await readSelectedAudioClips(setPickStatus);
       console.log("[premiere] sources read:", sources.length);
       if (sources.length === 0) {
         setPickError("No audio could be read from the selection.");
@@ -93,6 +127,7 @@ export function SeparationPanel({ onSignOut }: Props) {
       setPickError(e instanceof Error ? e.message : String(e));
     } finally {
       setPickerBusy(false);
+      setPickStatus(null);
     }
   }
 
@@ -123,6 +158,8 @@ export function SeparationPanel({ onSignOut }: Props) {
   }
 
   function removeEntry(id: string) {
+    // The card (FileCard.handleRemove) deletes the saved separation server-side; here we just
+    // drop it from the panel list.
     setEntries((prev) => prev.filter((e) => e.id !== id));
   }
 
@@ -174,6 +211,7 @@ export function SeparationPanel({ onSignOut }: Props) {
         />
       )}
 
+      {pickStatus && <p className="panel-status">{pickStatus}</p>}
       {pickError && <p className="panel-error">{pickError}</p>}
 
       <ul className="file-cards">
@@ -181,6 +219,7 @@ export function SeparationPanel({ onSignOut }: Props) {
           <li key={entry.id}>
             <FileCard
               entry={entry}
+              projectKey={projectKey}
               onRemove={() => removeEntry(entry.id)}
               onCreditChange={refreshBalance}
               onBuyCredits={BILLING_ENABLED ? () => setBuyOpen(true) : undefined}

@@ -333,6 +333,15 @@ button {
   color: #ec5b62;
 }
 
+/* Transient progress (e.g. extracting a video's audio via Adobe Media Encoder). Muted, not an
+   error — distinct from .panel-error's red. */
+.panel-status {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9a9a9a;
+}
+
 /* Inline project browser (replaces the old modal popup): lives in the panel flow below the
    source picker, framed by a dashed box to match the source control. */
 .proj-browser {
@@ -1168,6 +1177,17 @@ button {
   min-width: 0;
 }
 
+/* Elapsed / total time shown during in-panel preview (stem rows and the mix output). tabular-nums
+   keeps the digits from shifting as the clock ticks. */
+.preview-time {
+  margin: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #b8b8b8;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .waveform {
   display: block;
   width: 100%;
@@ -1424,14 +1444,17 @@ button {
   box-sizing: border-box;
   margin-right: 8px;
   padding: 4px 8px;
+  -webkit-appearance: none;
+  appearance: none;
   background: transparent;
-  border: 1px solid var(--spectrum-global-color-gray-300, #4b4b4b);
+  border: 1px solid transparent;
   border-radius: 4px;
   color: var(--spectrum-global-color-gray-800, #ebebeb);
   font-family: inherit;
   font-size: 13px;
 }
-.spk-name:focus { outline: none; border-color: #644AFF; }
+.spk-name:hover { background: var(--spectrum-global-color-gray-100, #2a2a2a); }
+.spk-name:focus { outline: none; }
 .spk-count {
   flex: 0 0 auto;
   margin-right: 8px;
@@ -1471,10 +1494,15 @@ button {
 /* Lines (segments) */
 .seg-hint { margin: 0 0 8px; font-size: 11px; color: var(--spectrum-global-color-gray-500, #8d8d8d); }
 .seg-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
-.seg-row { display: flex; align-items: flex-start; margin-bottom: 6px; }
+/* Start time sits on its own line above; the speaker tag and the dialogue share the line below,
+   vertically centered so they read at the same height. */
+.seg-row { display: flex; flex-direction: column; margin-bottom: 8px; }
+.seg-main { display: flex; align-items: center; min-width: 0; }
+/* Fixed-width tag column so the dialogue always starts at the same x, regardless of name length */
 .seg-tag {
-  flex: 0 0 auto;
-  max-width: 96px;
+  flex: 0 0 84px;
+  width: 84px;
+  box-sizing: border-box;
   margin-right: 8px;
   padding: 3px 8px;
   border-radius: 4px;
@@ -1486,38 +1514,35 @@ button {
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.seg-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.seg-time { font-size: 10px; color: var(--spectrum-global-color-gray-500, #8d8d8d); }
-.seg-text { font-size: 12px; line-height: 1.35; color: var(--spectrum-global-color-gray-700, #d0d0d0); }
-
-/* Split a line: ✂ toggle on the right, inline time input + actions below the text */
-.seg-split-toggle {
-  flex: 0 0 auto;
-  margin-left: 8px;
-  padding: 2px 6px;
+/* Start time doubles as the split-boundary handle — tap to fine-tune the caret-ratio estimate */
+.seg-time { display: inline-block; margin-bottom: 1px; font-size: 10px; color: var(--spectrum-global-color-gray-500, #8d8d8d); cursor: pointer; }
+.seg-time:hover { color: var(--spectrum-global-color-gray-700, #d0d0d0); }
+.seg-time-input {
+  width: 56px;
+  margin: 0 0 1px;
+  padding: 1px 4px;
+  font-size: 10px;
+}
+/* The dialogue line is a seamless inline input — looks like text until focused */
+.seg-text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 2px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
   font-size: 12px;
-  line-height: 1;
-  color: var(--spectrum-global-color-gray-600, #a0a0a0);
-  cursor: pointer;
+  line-height: 1.35;
+  color: var(--spectrum-global-color-gray-700, #d0d0d0);
 }
-.seg-split { display: flex; align-items: center; margin-top: 4px; }
-.seg-split-input {
-  width: 64px;
-  margin-right: 6px;
-  padding: 2px 6px;
-  font-size: 11px;
+/* Rest looks like plain text; a faint hover wash hints it's editable without cluttering the line */
+.seg-text-input:hover { background: var(--spectrum-global-color-gray-100, #2a2a2a); border-radius: 3px; }
+.seg-text-input:focus {
+  outline: none;
 }
-.seg-split-go,
-.seg-split-cancel {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.seg-split-go { margin-right: 6px; background: #644aff; color: #fff; }
-.seg-split-go--off { opacity: 0.4; cursor: default; }
-.seg-split-cancel { color: var(--spectrum-global-color-gray-600, #a0a0a0); }
 
 .mix-output-name-input {
   margin: 0;
@@ -1529,6 +1554,7 @@ button {
   font-weight: 600;
   font-family: inherit;
   color: #f4f4f4;
+  /* Resting state reads as plain text; the editable affordance only appears on hover/focus. */
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -1536,7 +1562,7 @@ button {
 }
 
 .mix-output-name-input:hover {
-  border-color: #3a3a3a;
+  border-color: #5a5a5a;
 }
 
 .mix-output-name-input:focus {

@@ -17,6 +17,14 @@ export interface MixResult {
 
 type ImportTarget = "project" | "timeline";
 
+// "M:SS" elapsed/total readout shown while previewing.
+function fmtClock(sec: number): string {
+  const t = Number.isFinite(sec) && sec > 0 ? sec : 0;
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 interface Props {
   result: MixResult;
   isActive: boolean;
@@ -69,6 +77,9 @@ export function MixOutputView({
 
   const progress = result.durationSec > 0 ? currentTime / result.durationSec : 0;
   const sizeMb = (result.byteLength / 1024 / 1024).toFixed(1);
+  // Edit only the base name — the ".wav" is managed for the user (shown in the meta line and
+  // re-appended on every keystroke) so it can't be accidentally deleted and break the import.
+  const baseName = result.name.replace(/\.wav$/i, "");
 
   // Browser: toggle in-panel playback. UXP (no audio output): open the mix in the OS default player.
   function preview() {
@@ -77,7 +88,7 @@ export function MixOutputView({
       onRequestActive(!isActive);
       return;
     }
-    previewInDefaultApp(audioUrl, result.name || "mix.wav").catch((e) => console.warn("[preview]", e));
+    previewInDefaultApp(audioUrl, `${baseName || "mix"}.wav`).catch((e) => console.warn("[preview]", e));
   }
 
   return (
@@ -99,15 +110,22 @@ export function MixOutputView({
           {onRename ? (
             <input
               className="mix-output-name-input"
-              value={result.name}
-              aria-label="Mix name"
+              value={baseName}
+              aria-label="Mix name — click to rename"
+              title="Click to rename"
+              placeholder="Mix name"
               spellCheck={false}
-              onChange={(e) => onRename(e.currentTarget.value)}
+              onChange={(e) => onRename(`${e.currentTarget.value}.wav`)}
             />
           ) : (
             <p className="mix-output-name">{result.name}</p>
           )}
-          <p className="mix-output-meta">{result.stemCount} stems · {sizeMb} MB</p>
+          <p className="mix-output-meta">WAV · {result.stemCount} stems · {sizeMb} MB</p>
+          {canPlay && isActive && result.durationSec > 0 && (
+            <p className="preview-time">
+              {fmtClock(currentTime)} / {fmtClock(result.durationSec)}
+            </p>
+          )}
         </div>
         <div
           className="mix-output-close"

@@ -9,4 +9,9 @@ export const ClipProjectItem = ppro.ClipProjectItem;
 // is absent (the UXP case). See audio/sourceMonitorPlayer.ts.
 export const SourceMonitor = ppro.SourceMonitor;
 export const TickTime = ppro.TickTime;
+// Adobe Media Encoder bridge — used to extract audio from video clips (MOV → MP3) locally
+// before separation. See host/encoder.ts.
+export const EncoderManager = ppro.EncoderManager;
+// Places clips onto sequence tracks at a specific time (importing the mix to the timeline).
+export const SequenceEditor = ppro.SequenceEditor;
 export default ppro;

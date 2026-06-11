@@ -1,11 +1,17 @@
 import { storage } from "uxp";
-import { Project, ClipProjectItem } from "premierepro";
+import { Project, ClipProjectItem, SequenceEditor, TickTime } from "premierepro";
 import type { LoadedAudioSource } from "../input/audioPicker";
+import { isVideoPath, convertVideoToAudio } from "./encoder";
 
 // The separation backend only reliably handles these (keep in sync with audioPicker's
-// SUPPORTED_EXTS and the server's util/audioFormat). vibi separates audio only — video clips
-// and other formats are filtered out of the project list and rejected on timeline-add.
+// SUPPORTED_EXTS and the server's util/audioFormat). vibi separates audio; video clips have
+// their audio track extracted locally to MP3 first (see ./encoder), and anything that's
+// neither audio nor a known video container is skipped.
 const AUDIO_EXTS = new Set(["m4a", "mp3", "wav"]);
+
+// Bytes from an audio path are uploaded as-is; a video path is first run through Premiere's
+// encoder to pull out a small MP3 (convertVideoToAudio).
+type StatusFn = (message: string) => void;
 
 // UXP cannot receive a native drag from Premiere (the host UI's drag payload never reaches
 // the web layer — only OS-filesystem file drops do). The supported equivalent: the user
@@ -13,25 +19,25 @@ const AUDIO_EXTS = new Set(["m4a", "mp3", "wav"]);
 // the selection from BOTH the Project panel (if that API exists in this version) and the
 // active sequence (timeline), dedupe by media path, and read each audio file's bytes.
 // Non-audio selections (e.g. video) are skipped with a clear export-audio hint.
-export async function readSelectedAudioClips(): Promise<LoadedAudioSource[]> {
+export async function readSelectedAudioClips(onStatus?: StatusFn): Promise<LoadedAudioSource[]> {
   console.log("[premiere] readSelectedAudioClips: getting active project…");
   const project = await Project.getActiveProject();
   console.log("[premiere] active project:", !!project);
   if (!project) throw new Error("Open a project first");
 
-  const projectItems = await collectSelectedProjectItems(project);
-  if (projectItems.length === 0) {
+  const selected = await collectSelectedProjectItems(project);
+  if (selected.length === 0) {
     throw new Error(
-      "No audio selected. Select an audio clip in the timeline (or an item in the Project panel), then click again.",
+      "No clip selected. Select an audio or video clip in the timeline (or an item in the Project panel), then click again.",
     );
   }
 
   const sources: LoadedAudioSource[] = [];
   const seenPaths = new Set<string>();
   const skipped: string[] = [];
-  const nonAudio: string[] = [];
+  const unsupported: string[] = [];
 
-  for (const projectItem of projectItems) {
+  for (const { projectItem, startTimeSec } of selected) {
     console.log(
       "[premiere] projectItem methods:",
       listMatching(projectItem, /media|path|name|content|footage/i).join(", "),
@@ -42,31 +48,66 @@ export async function readSelectedAudioClips(): Promise<LoadedAudioSource[]> {
     seenPaths.add(mediaPath);
 
     const fileName = mediaPath.split(/[\\/]/).pop() ?? "clip";
-    // vibi separates audio only — skip video/unsupported selections instead of extracting.
-    if (!isAudioPath(mediaPath)) {
-      console.log("[premiere] skipping non-audio selection:", fileName);
-      nonAudio.push(fileName);
+    // Audio uploads as-is; video has its audio extracted locally to MP3; anything else is skipped.
+    if (!isAudioPath(mediaPath) && !isVideoPath(mediaPath)) {
+      console.log("[premiere] skipping unsupported selection:", fileName);
+      unsupported.push(fileName);
       continue;
     }
     try {
-      sources.push(await readMediaToSource(mediaPath));
+      const src = await loadClipSource(mediaPath, onStatus);
+      // Remember where this clip sits on the timeline so a generated mix can drop back there.
+      if (startTimeSec != null) src.timelineStartSec = startTimeSec;
+      sources.push(src);
     } catch (e) {
-      console.log("[premiere] read failed:", e);
+      console.log("[premiere] load failed:", e);
+      // Surface a real conversion error (e.g. AME missing) instead of a generic "couldn't read".
+      if (isVideoPath(mediaPath) && e instanceof Error) throw e;
       skipped.push(fileName);
     }
   }
 
   if (sources.length === 0) {
-    if (nonAudio.length > 0) {
+    if (unsupported.length > 0) {
       throw new Error(
-        `"${nonAudio.join(", ")}" isn't a supported audio clip. vibi separates audio only — ` +
-          `select an audio clip (mp3/wav/m4a) in the timeline, then click again.`,
+        `"${unsupported.join(", ")}" isn't a supported clip. Select an audio clip (mp3/wav/m4a) ` +
+          `or a video clip (mov/mp4/…) and click again.`,
       );
     }
     const detail = skipped.length > 0 ? ` (${skipped.join(", ")})` : "";
     throw new Error(`Couldn't read audio from the selection${detail}.`);
   }
   return sources;
+}
+
+// Turn a clip's media path into an uploadable audio source: read audio directly, or extract a
+// video's audio track to MP3 via Premiere's encoder first.
+async function loadClipSource(mediaPath: string, onStatus?: StatusFn): Promise<LoadedAudioSource> {
+  if (isVideoPath(mediaPath)) return convertVideoToAudio(mediaPath, { onStatus });
+  return readMediaToSource(mediaPath);
+}
+
+// A stable key for the active Premiere project, used to scope the on-disk separation history
+// to "this project". Prefer the project's GUID (immutable), then its file path (changes only if
+// the .prproj is moved), then its name. Returns "default" when nothing is open or readable — so
+// history still works (one shared bucket) for File-picker-only use without a project. Accessors
+// vary by Premiere version and may be properties or methods, so probe defensively.
+export async function getActiveProjectKey(): Promise<string> {
+  try {
+    const project: any = await Project.getActiveProject();
+    if (!project) return "default";
+    for (const name of ["guid", "id", "path", "name"]) {
+      try {
+        const v = typeof project[name] === "function" ? await project[name]() : project[name];
+        if (v) return `${name}:${String(v)}`;
+      } catch {
+        /* try next accessor */
+      }
+    }
+  } catch (e) {
+    console.log("[premiere] getActiveProjectKey failed:", e);
+  }
+  return "default";
 }
 
 function toArray(x: any): any[] {
@@ -95,9 +136,9 @@ export interface ProjectMediaItem {
 }
 
 // Walk the project's bin tree (no selection API exists for the Project panel) and list every
-// media-backed item whose source is a supported audio file. Used by the in-panel project
-// browser so the user can pick a Project-panel item to import. Video/unsupported media is
-// excluded — vibi separates audio only.
+// media-backed item whose source is a supported audio file OR a video container we can extract
+// audio from. Used by the in-panel project browser so the user can pick a Project-panel item to
+// import; video rows get their audio extracted to MP3 on pick (see importProjectMediaItem).
 export async function listProjectMediaItems(): Promise<ProjectMediaItem[]> {
   const project = await Project.getActiveProject();
   if (!project) throw new Error("Open a project first");
@@ -123,8 +164,8 @@ export async function listProjectMediaItems(): Promise<ProjectMediaItem[]> {
       /* not a clip item */
     }
     if (mediaPath) {
-      // Audio-only: skip video and unsupported formats so the list shows just what's usable.
-      if (!seen.has(mediaPath) && isAudioPath(mediaPath)) {
+      // Show audio (uploaded as-is) and video (audio extracted on pick); skip the rest.
+      if (!seen.has(mediaPath) && (isAudioPath(mediaPath) || isVideoPath(mediaPath))) {
         seen.add(mediaPath);
         const name = (item.name as string) || mediaPath.split(/[\\/]/).pop() || mediaPath;
         out.push({ name, mediaPath, ext: mediaPath.toLowerCase().split(".").pop() ?? "" });
@@ -150,9 +191,12 @@ export async function listProjectMediaItems(): Promise<ProjectMediaItem[]> {
   return out;
 }
 
-// Import a single project media item (by path) — audio read or video audio-extracted.
-export async function importProjectMediaItem(mediaPath: string): Promise<LoadedAudioSource> {
-  return readMediaToSource(mediaPath);
+// Import a single project media item (by path) — audio read directly, or video audio-extracted.
+export async function importProjectMediaItem(
+  mediaPath: string,
+  onStatus?: StatusFn,
+): Promise<LoadedAudioSource> {
+  return loadClipSource(mediaPath, onStatus);
 }
 
 // Method names on the object's chain matching a pattern (short, readable diagnostic).
@@ -244,13 +288,33 @@ function findSelectionGetters(obj: any): string[] {
   return out;
 }
 
-// Collect ProjectItems from the current Premiere selection: the Project panel (auto-detected
-// selection getter) and the active sequence (known sequence.getSelection). Returns
-// media-backed ProjectItems.
-async function collectSelectedProjectItems(project: any): Promise<any[]> {
-  const items: any[] = [];
+// A selected media-backed ProjectItem, plus (for timeline selections) the sequence-relative
+// start time of the clip it came from so a mix can be dropped back at that position.
+interface SelectedItem {
+  projectItem: any;
+  startTimeSec?: number;
+}
 
-  // 1) Project panel selection — auto-discovered getter.
+// Read a timeline track item's sequence-relative start time in seconds, or undefined if the
+// accessor is missing/throws (older API, or a Project-panel item with no timeline position).
+async function trackItemStartSec(clip: any): Promise<number | undefined> {
+  if (typeof clip?.getStartTime !== "function") return undefined;
+  try {
+    const t = await clip.getStartTime();
+    const sec = typeof t?.seconds === "number" ? t.seconds : undefined;
+    return Number.isFinite(sec) ? sec : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Collect ProjectItems from the current Premiere selection: the Project panel (auto-detected
+// selection getter) and the active sequence (known sequence.getSelection). Timeline selections
+// also carry the clip's start time; Project-panel ones don't.
+async function collectSelectedProjectItems(project: any): Promise<SelectedItem[]> {
+  const items: SelectedItem[] = [];
+
+  // 1) Project panel selection — auto-discovered getter. No timeline position here.
   const getters = findSelectionGetters(project);
   console.log("[premiere] project selection getters:", getters.length ? getters.join(", ") : "(none)");
   if (!getters.length) {
@@ -266,7 +330,7 @@ async function collectSelectedProjectItems(project: any): Promise<any[]> {
       console.log(`[premiere] ${name}() -> ${arr.length} item(s)`);
       for (const it of arr) {
         const pi = it?.projectItem ?? it;
-        if (pi) items.push(pi);
+        if (pi) items.push({ projectItem: pi });
       }
       if (items.length) break;
     } catch (e) {
@@ -274,7 +338,7 @@ async function collectSelectedProjectItems(project: any): Promise<any[]> {
     }
   }
 
-  // 2) Timeline (active sequence) selection.
+  // 2) Timeline (active sequence) selection — capture each clip's start time.
   try {
     const sequence = await project.getActiveSequence();
     if (sequence && typeof sequence.getSelection === "function") {
@@ -289,11 +353,11 @@ async function collectSelectedProjectItems(project: any): Promise<any[]> {
       }
       console.log(`[premiere] timeline selection -> ${clips.length} track item(s)`);
       if (clips[0]) {
-        console.log("[premiere] trackitem methods:", listMatching(clips[0], /project|media|item|name|clip/i).join(", "));
+        console.log("[premiere] trackitem methods:", listMatching(clips[0], /project|media|item|name|clip|start|time/i).join(", "));
       }
       for (const clip of clips) {
         const pi = await resolveProjectItem(clip);
-        if (pi) items.push(pi);
+        if (pi) items.push({ projectItem: pi, startTimeSec: await trackItemStartSec(clip) });
       }
     } else {
       console.log("[premiere] no active sequence / getSelection");
@@ -383,11 +447,75 @@ async function ensureAudioTracks(seq: AnySequence, needed: number): Promise<numb
   return count;
 }
 
-// Import into the Project panel and place each on its own audio track of the active
-// sequence (separate tracks so time-aligned stems overlap rather than concatenate). Adds
-// tracks automatically when the sequence doesn't have enough; if track creation isn't
-// supported, stems fall back onto the last existing track.
-export async function importAudioToTimeline(items: AudioToImport[]): Promise<void> {
+// Where on the timeline a clip should land: an explicit sequence-relative time in seconds
+// (the originally-selected clip's position) or, when omitted, the current playhead.
+async function placementTime(sequence: any, atSeconds?: number): Promise<unknown> {
+  if (atSeconds != null && TickTime) return TickTime.createWithSeconds(Math.max(0, atSeconds));
+  // No explicit position → drop at the playhead (current-time indicator).
+  try {
+    const pos = await sequence.getPlayerPosition?.();
+    if (pos) return pos;
+  } catch (e) {
+    console.log("[premiere] getPlayerPosition threw:", e);
+  }
+  if (TickTime) return TickTime.TIME_ZERO ?? TickTime.createWithSeconds(0);
+  throw new Error("Couldn't determine a timeline position (no playhead and no TickTime API).");
+}
+
+// Place an imported audio ProjectItem onto a sequence audio track at `time` via the modern
+// SequenceEditor transaction. `createOverwriteItemAction` overwrites on the target track — callers
+// pass a freshly added (empty) track index so existing audio is never clobbered. Throws (loudly,
+// with the cause) rather than failing silently, so a placement that the host rejects surfaces in
+// the panel instead of leaving the clip in the Project panel only.
+function placeClipViaEditor(
+  project: any,
+  sequence: any,
+  projectItem: unknown,
+  time: unknown,
+  audioTrackIndex: number,
+): void {
+  console.log(
+    `[premiere] placeClipViaEditor: SequenceEditor=${typeof SequenceEditor}, trackIndex=${audioTrackIndex}`,
+  );
+  if (!SequenceEditor || typeof SequenceEditor.getEditor !== "function") {
+    throw new Error("SequenceEditor API unavailable in this Premiere build");
+  }
+  const editor: any = SequenceEditor.getEditor(sequence);
+  console.log("[premiere] editor:", !!editor, "createOverwriteItemAction:", typeof editor?.createOverwriteItemAction);
+  if (typeof project.lockedAccess !== "function" || typeof project.executeTransaction !== "function") {
+    throw new Error(
+      `transaction API missing (lockedAccess=${typeof project.lockedAccess}, executeTransaction=${typeof project.executeTransaction})`,
+    );
+  }
+
+  let actionThrew: unknown = null;
+  let ok: unknown = false;
+  project.lockedAccess(() => {
+    ok = project.executeTransaction((compound: { addAction(a: unknown): void }) => {
+      try {
+        // (projectItem, time, videoTrackIndex, audioTrackIndex). Audio-only media ignores the
+        // video index; we pass 0.
+        const action = editor.createOverwriteItemAction(projectItem, time, 0, audioTrackIndex);
+        console.log("[premiere] overwrite action:", typeof action, action ? "created" : "null");
+        compound.addAction(action);
+      } catch (e) {
+        actionThrew = e; // surface below — executeTransaction may swallow throws into a false return
+        console.log("[premiere] createOverwriteItemAction threw:", e);
+      }
+    }, "Add audio to timeline");
+  });
+  console.log("[premiere] executeTransaction ok =", ok);
+  if (actionThrew) {
+    throw new Error(`createOverwriteItemAction failed: ${actionThrew instanceof Error ? actionThrew.message : String(actionThrew)}`);
+  }
+  if (ok === false) throw new Error("executeTransaction returned false (host rejected the placement)");
+}
+
+// Import into the Project panel AND drop each clip onto the active sequence at a chosen position:
+// `atSeconds` (the originally-selected timeline clip's start) when provided, else the playhead.
+// Each clip goes on its own freshly-added audio track so it overlaps the original in time without
+// overwriting any existing audio.
+export async function importAudioToTimeline(items: AudioToImport[], atSeconds?: number): Promise<void> {
   if (items.length === 0) return;
   const project = await Project.getActiveProject();
   if (!project) throw new Error("Open a project first");
@@ -395,20 +523,27 @@ export async function importAudioToTimeline(items: AudioToImport[]): Promise<voi
   if (!sequence) throw new Error("Open a sequence in the timeline first");
   const paths = await Promise.all(items.map((i) => writeAudioToTemp(i.fileName, i.bytes)));
   const projectItems = await project.importFiles(paths);
+  console.log(`[premiere] importAudioToTimeline: imported ${projectItems?.length} item(s), atSeconds=${atSeconds}`);
 
   const seq = sequence as unknown as AnySequence;
-  const trackCount = await ensureAudioTracks(seq, projectItems.length);
+  const time = await placementTime(sequence, atSeconds);
+  console.log("[premiere] placement time seconds:", (time as any)?.seconds);
+
+  // Reserve fresh tracks above the existing ones so placement is non-destructive.
+  const before = await audioTrackCount(seq);
+  const baseIndex = before ?? 0;
+  const after = await ensureAudioTracks(seq, baseIndex + projectItems.length);
+  console.log(`[premiere] audio tracks before=${before} after=${after} baseIndex=${baseIndex}`);
 
   for (let i = 0; i < projectItems.length; i++) {
-    // One stem per track when possible; otherwise clamp to the last available track.
-    const trackIndex = trackCount != null ? Math.min(i, Math.max(0, trackCount - 1)) : i;
+    const audioTrackIndex = baseIndex + i;
     try {
-      await seq.appendClipToAudioTrack(projectItems[i], trackIndex);
+      placeClipViaEditor(project, sequence, projectItems[i], time, audioTrackIndex);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(
         `Imported to the Project panel, but placing "${items[i].fileName}" on the timeline ` +
-          `failed (${msg}). Add more audio tracks to the sequence and try again.`,
+          `failed: ${msg}`,
       );
     }
   }

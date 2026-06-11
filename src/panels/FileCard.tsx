@@ -6,7 +6,13 @@ import { Waveform } from "./Waveform";
 import { decodeAndComputePeaks } from "../audio/waveform";
 import { mixStems } from "../audio/mixer";
 import { playbackSupported } from "../audio/player";
-import { runSeparation, fetchSeparationScript } from "../jobs/separationClient";
+import {
+  runSeparation,
+  fetchSeparationScript,
+  fetchStem,
+  deleteSeparation,
+  type SavedSeparation,
+} from "../jobs/separationClient";
 import { fetchPeaks } from "../jobs/peaksClient";
 import { segmentSpeaker } from "../jobs/segmentClient";
 import { ScriptEditor } from "./ScriptEditor";
@@ -52,11 +58,15 @@ async function loadPeaks(
 
 export interface FileEntry {
   id: string;
-  source: LoadedAudioSource;
+  // A freshly added file (has its bytes, can be separated) OR a history-restored entry (no
+  // source bytes — `restored` carries the saved metadata, and stems fetch from the server).
+  source: LoadedAudioSource | null;
+  restored?: SavedSeparation;
 }
 
 interface Props {
   entry: FileEntry;
+  projectKey: string | null;
   onRemove: () => void;
   onCreditChange?: () => void;
   onBuyCredits?: () => void;
@@ -64,6 +74,7 @@ interface Props {
 
 type Stage =
   | { kind: "prepping" }
+  | { kind: "restoring" }
   | { kind: "generating"; progress: number; reason: string | null }
   | { kind: "done"; stems: StemView[]; mix: MixResult | null }
   | { kind: "error"; message: string; buyable?: boolean };
@@ -71,9 +82,20 @@ type Stage =
 
 const MIX_ID = "mix";
 
-export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Props) {
-  const [stage, setStage] = useState<Stage>({ kind: "prepping" });
-  const [collapsed, setCollapsed] = useState(false);
+export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCredits }: Props) {
+  // File identity comes from the live source when added fresh, or from saved metadata when this
+  // card was rehydrated from history (no source bytes).
+  const meta = entry.source
+    ? { fileName: entry.source.fileName, ext: entry.source.ext, byteLength: entry.source.byteLength }
+    : {
+        fileName: entry.restored?.fileName ?? "audio",
+        ext: (entry.restored?.fileName ?? "").split(".").pop() ?? "",
+        byteLength: entry.restored?.byteLength ?? 0,
+      };
+  const [stage, setStage] = useState<Stage>(entry.restored ? { kind: "restoring" } : { kind: "prepping" });
+  // Restored history cards start collapsed: their stem bytes load from disk lazily on first
+  // expand, so signing in with many saved separations doesn't pull every stem into memory at once.
+  const [collapsed, setCollapsed] = useState(!!entry.restored);
   const [mixBusy, setMixBusy] = useState(false);
   const [mixError, setMixError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState<ImportTarget | null>(null);
@@ -94,12 +116,14 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
   const [scriptError, setScriptError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!entry.source) return; // restored card — no original bytes to prep a waveform from
+    const source = entry.source;
     let cancelled = false;
     setPrepFailed(false);
     (async () => {
       let decoded;
       try {
-        decoded = await decodeAndComputePeaks(entry.source.bytes);
+        decoded = await decodeAndComputePeaks(source.bytes);
       } catch {
         if (!cancelled) setPrepFailed(true);
         return;
@@ -115,7 +139,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
       // Local couldn't decode (mp3/m4a in UXP) → upgrade to the server-computed waveform.
       if (decoded.status !== "ok") {
         try {
-          const remote = await fetchPeaks(entry.source.bytes, entry.source.fileName);
+          const remote = await fetchPeaks(source.bytes, source.fileName);
           if (cancelled) return;
           setBasePeaks(remote.peaks);
           if (remote.durationSec > 0) setDurationSec(remote.durationSec);
@@ -155,7 +179,63 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     revokeObjectUrl(s.mix?.audioUrl);
   }
 
+  // Rehydrate a history-restored card on first expand: fetch the saved stems from the server
+  // (R2-backed, egress-free) and jump straight to the "done" view — peaks, playback, mix, import
+  // all work off the in-memory registry as usual. Gated on `collapsed` so the network/memory cost
+  // is only paid for cards the user opens, and run-once via the ref so re-expanding doesn't refetch.
+  const restoreStartedRef = useRef(false);
+  useEffect(() => {
+    if (!entry.restored || collapsed || restoreStartedRef.current) return;
+    restoreStartedRef.current = true;
+    const restored = entry.restored;
+    let cancelled = false;
+    let finished = false;
+    const minted: string[] = [];
+    (async () => {
+      setDurationSec(restored.durationSec);
+      setSeparationJobId(restored.jobId);
+      const built = await Promise.all(
+        restored.stems.map(async (m, idx): Promise<StemView | null> => {
+          const bytes = await fetchStem(restored.jobId, m.stemId);
+          if (cancelled) return null;
+          const peaks = await loadPeaks(bytes, `${m.label || "stem"}.wav`);
+          const url = makeObjectUrl(bytes);
+          minted.push(url);
+          return {
+            id: m.stemId,
+            label: m.label,
+            volume: 100,
+            selected: idx === 0,
+            peaks: peaks.peaks,
+            audioUrl: url,
+            durationSec: peaks.durationSec,
+          };
+        }),
+      );
+      if (cancelled) {
+        minted.forEach((u) => revokeObjectUrl(u));
+        return;
+      }
+      setStage({ kind: "done", stems: built.filter((s): s is StemView => s !== null), mix: null });
+      finished = true;
+    })().catch((e) => {
+      finished = true;
+      if (cancelled) return;
+      console.warn("[history] restore failed:", e);
+      setStage({ kind: "error", message: "Couldn't restore this saved result — it may have expired." });
+    });
+    return () => {
+      cancelled = true;
+      // Collapsed again before the fetch finished — allow a later expand to retry instead of
+      // leaving the card stuck on "Restoring…".
+      if (!finished) restoreStartedRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id, collapsed]);
+
   async function onGenerate() {
+    const source = entry.source;
+    if (!source) return; // restored cards have no original bytes — can't (re)separate
     // Re-running supersedes any previous stems/mix — free their buffers first.
     setScriptOpen(false);
     setScriptDraft(null); // new separation → forget prior script + edits
@@ -167,9 +247,10 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     try {
       const durationMs = Math.round(durationSec * 1000);
       const { stems: separated, jobId } = await runSeparation(
-        entry.source.bytes,
-        entry.source.fileName,
+        source.bytes,
+        source.fileName,
         durationMs,
+        projectKey, // tags the job so it lands in this project's saved-separation history
         (progress, reason) =>
           setStage((prev) =>
             prev.kind === "generating" ? { ...prev, progress, reason } : prev,
@@ -194,6 +275,8 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
       );
       diag(`FileCard: setStage done (${stems.length} stems)`);
       setStage({ kind: "done", stems, mix: null });
+      // No client-side save: the server persisted this separation (and pushed stems to R2) when
+      // the job completed, so it's already in this project's history for next sign-in.
     } catch (e) {
       diag(`FileCard ERROR: ${e instanceof Error ? e.message : String(e)}`);
       if (e instanceof InsufficientCreditsError) {
@@ -233,7 +316,7 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
       const audioUrl = makeObjectUrl(bytes);
       const mix: MixResult = {
         id: `mix-${Date.now()}`,
-        name: `${entry.source.fileName.replace(/\.[^.]+$/, "")} - mix.wav`,
+        name: `${meta.fileName.replace(/\.[^.]+$/, "")} - mix.wav`,
         byteLength: bytes.byteLength,
         stemCount: selected.length,
         peaks: loaded.peaks,
@@ -312,18 +395,21 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           durationSec: loaded.durationSec,
         });
       }
+      // Keep the original background stem — the script only re-cuts the speaker voices, the
+      // separated background music should still be available alongside them.
+      const background = stage.stems.find((s) => s.id === "background") ?? null;
+      const finalStems = background ? [...newStems, background] : newStems;
       setStage((prev) => {
         if (prev.kind !== "done") return prev;
-        // Keep the original background stem — the script only re-cuts the speaker voices, the
-        // separated background music should still be available alongside them.
-        const background = prev.stems.find((s) => s.id === "background") ?? null;
         prev.stems.forEach((st) => {
           if (st.id !== "background") revokeObjectUrl(st.audioUrl); // free superseded voice stems only
         });
         revokeObjectUrl(prev.mix?.audioUrl);
-        const stems = background ? [...newStems, background] : newStems;
-        return { kind: "done", stems, mix: null };
+        return { kind: "done", stems: finalStems, mix: null };
       });
+      // The script rebuild is a client-side re-cut and isn't uploaded — history keeps the original
+      // separated stems. The script itself is server-side (projectSeq), so a restored card can
+      // reopen "Check script" and rebuild again.
     } catch (e) {
       setScriptError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -346,15 +432,25 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
     });
   }
 
-  async function runImport(target: ImportTarget, items: AudioToImport[], label: string) {
+  async function runImport(
+    target: ImportTarget,
+    items: AudioToImport[],
+    label: string,
+    atSeconds?: number,
+  ) {
     if (items.length === 0) return;
     setImportError(null);
     setImportNotice(null);
     setImportBusy(target);
     try {
       if (target === "project") await importAudioToProject(items);
-      else await importAudioToTimeline(items);
-      const where = target === "project" ? "Project panel" : "timeline";
+      else await importAudioToTimeline(items, atSeconds);
+      const where =
+        target === "project"
+          ? "Project panel"
+          : atSeconds != null
+            ? "timeline (at the clip's position)"
+            : "timeline (at the playhead)";
       setImportNotice(`Added ${label} to the ${where}.`);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : String(e));
@@ -365,18 +461,31 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
 
   async function importMix(target: ImportTarget) {
     if (stage.kind !== "done" || !stage.mix) return;
+    // Guard against an emptied name field (".wav" only) so the imported clip keeps a real name.
+    const base = stage.mix.name.replace(/\.wav$/i, "").trim();
     const item: AudioToImport = {
-      fileName: stage.mix.name,
+      fileName: `${base || "mix"}.wav`,
       bytes: await audioUrlToBytes(stage.mix.audioUrl),
     };
-    await runImport(target, [item], "mix");
+    // If this card's audio came from a timeline selection, drop the mix back at that clip's
+    // position; otherwise importAudioToTimeline falls back to the playhead.
+    await runImport(target, [item], "mix", entry.source?.timelineStartSec);
   }
 
   function requestActive(id: string, active: boolean) {
     setActiveId(active ? id : (prev) => (prev === id ? null : prev));
   }
 
-  const sizeMb = (entry.source.byteLength / 1024 / 1024).toFixed(1);
+  // Remove the card from the panel, and — if it corresponds to a saved separation — permanently
+  // delete that record server-side so it doesn't reappear on the next sign-in. A fresh card that
+  // never finished separating has no jobId, so there's nothing to delete.
+  function handleRemove() {
+    const jobId = entry.restored?.jobId ?? separationJobId;
+    if (jobId) void deleteSeparation(jobId).catch((e) => console.warn("[history] delete failed:", e));
+    onRemove();
+  }
+
+  const sizeMb = (meta.byteLength / 1024 / 1024).toFixed(1);
 
   return (
     <div className={`file-card${collapsed ? " file-card--collapsed" : ""}`}>
@@ -390,15 +499,15 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           {collapsed ? "▶" : "▼"}
         </button>
         <div className="file-card-info">
-          <p className="file-card-name">{entry.source.fileName}</p>
-          <p className="file-card-meta">{entry.source.ext.toUpperCase()} · {sizeMb} MB</p>
+          <p className="file-card-name">{meta.fileName}</p>
+          <p className="file-card-meta">{meta.ext.toUpperCase()} · {sizeMb} MB</p>
         </div>
         <div className="file-card-actions">
           <button
             className="file-card-remove"
             aria-label="Remove file"
             type="button"
-            onClick={onRemove}
+            onClick={handleRemove}
           >
             ×
           </button>
@@ -410,6 +519,16 @@ export function FileCard({ entry, onRemove, onCreditChange, onBuyCredits }: Prop
           <sp-help-text variant="negative">
             Couldn't read this audio file — it may be corrupt or an unsupported format. Try a different file.
           </sp-help-text>
+        </div>
+      )}
+
+      {!collapsed && stage.kind === "restoring" && (
+        <div className="file-card-body">
+          <ul className="job-progress-list">
+            <li className="job-progress-row">
+              <span className="job-progress-label">Restoring saved result…</span>
+            </li>
+          </ul>
         </div>
       )}
 

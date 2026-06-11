@@ -44,3 +44,8 @@ export const ClipProjectItem = {
 // so the source-monitor engine stays unavailable and is never selected (see player.ts).
 export const SourceMonitor = null;
 export const TickTime = null;
+// No Adobe Media Encoder in browser preview — video→audio extraction is unavailable, so
+// picking a video clip here surfaces a friendly "not available in preview" error.
+export const EncoderManager = null;
+// No timeline editing in browser preview.
+export const SequenceEditor = null;

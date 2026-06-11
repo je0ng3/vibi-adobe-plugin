@@ -97,6 +97,11 @@ export function StemCard({
             onSeek={seekRatio}
           />
         </div>
+        {canPlay && isActive && stem.durationSec > 0 && (
+          <span className="preview-time">
+            {fmtClock(currentTime)} / {fmtClock(stem.durationSec)}
+          </span>
+        )}
         <label className="stem-card-check">
           <input
             type="checkbox"
@@ -120,6 +125,14 @@ export function StemCard({
       </div>
     </li>
   );
+}
+
+// "M:SS" elapsed/total readout shown while previewing.
+function fmtClock(sec: number): string {
+  const t = Number.isFinite(sec) && sec > 0 ? sec : 0;
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function formatDb(volume: number): string {
