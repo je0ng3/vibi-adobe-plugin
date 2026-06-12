@@ -98,11 +98,16 @@ export async function runSeparationJob(
     // durable history: the local disk copy is cleaned after JOB_TTL_MS, but R2 keeps the bytes
     // (egress-free) for the panel to restore on any later sign-in. No-op without R2 configured.
     if (objectStore) {
-      for (const s of stems) {
-        await objectStore
-          .uploadIfAbsent(ObjectKey.separationStem(jobId, s.stemId), stemFilePath(jobId, s.stemId), "audio/wav")
-          .catch((e) => console.warn(`[separation] R2 upload ${s.stemId} failed:`, e));
-      }
+      const store = objectStore;
+      // Independent uploads — run them concurrently so N stems cost one round-trip's wall-clock,
+      // not N. Each failure is logged and swallowed so one bad upload doesn't fail the others.
+      await Promise.all(
+        stems.map((s) =>
+          store
+            .uploadIfAbsent(ObjectKey.separationStem(jobId, s.stemId), stemFilePath(jobId, s.stemId), "audio/wav")
+            .catch((e) => console.warn(`[separation] R2 upload ${s.stemId} failed:`, e)),
+        ),
+      );
     }
 
     await updateJob(jobId, { status: "ready", progress: 100, progressReason: "Done", result: { stems, projectSeq } });
@@ -114,7 +119,12 @@ export async function runSeparationJob(
         console.error("[separation] refund failed:", err),
       );
     }
-    await updateJob(jobId, { status: "failed", error: e instanceof Error ? e.message : String(e) });
+    // Guard the terminal write too: if it throws (the same DB blip that failed the job), an
+    // un-awaited reject would strand the job 'processing' and surface as an unhandled rejection.
+    await updateJob(jobId, {
+      status: "failed",
+      error: e instanceof Error ? e.message : String(e),
+    }).catch((err) => console.error("[separation] failed-state write failed:", err));
   }
 }
 

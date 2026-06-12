@@ -1,5 +1,6 @@
 import { parseWav, computePeaks } from "./wav";
 import { probeDurationSec } from "./duration";
+import { formatClock } from "./format";
 
 const DEFAULT_BAR_COUNT = 200;
 
@@ -94,9 +95,6 @@ export function slicePeaks(peaks: Float32Array, startRatio: number, endRatio: nu
 }
 
 export function ratioToTime(ratio: number, durationSec: number): string {
-  const seconds = Math.max(0, ratio) * durationSec;
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return formatClock(Math.max(0, ratio) * durationSec, { padMinutes: true });
 }
 

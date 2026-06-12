@@ -3,6 +3,7 @@ import { Waveform } from "./Waveform";
 import type { StemView } from "./StemListView";
 import { play, stop, setVolume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
+import { formatClock } from "../audio/format";
 
 interface Props {
   stem: StemView;
@@ -29,13 +30,18 @@ export function StemCard({
   useEffect(() => {
     if (!isActive || !audioUrl) return;
     let raf = 0;
-    void play(stem.id, audioUrl, {
+    // UXP audio is fragile (hidden-<video> path can throw MediaError); if play rejects, drop back
+    // out of the active state so the button doesn't stay stuck showing "playing" with no sound.
+    play(stem.id, audioUrl, {
       volume: stem.volume,
       durationSec: stem.durationSec,
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);
       },
+    }).catch((e) => {
+      console.warn("[play] stem playback failed:", e);
+      onRequestActive(false);
     });
     const tick = () => {
       if (playingId() === stem.id) setCurrentTime(getCurrentTime());
@@ -99,7 +105,7 @@ export function StemCard({
         </div>
         {canPlay && isActive && stem.durationSec > 0 && (
           <span className="preview-time">
-            {fmtClock(currentTime)} / {fmtClock(stem.durationSec)}
+            {formatClock(currentTime)} / {formatClock(stem.durationSec)}
           </span>
         )}
         <label className="stem-card-check">
@@ -125,14 +131,6 @@ export function StemCard({
       </div>
     </li>
   );
-}
-
-// "M:SS" elapsed/total readout shown while previewing.
-function fmtClock(sec: number): string {
-  const t = Number.isFinite(sec) && sec > 0 ? sec : 0;
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function formatDb(volume: number): string {

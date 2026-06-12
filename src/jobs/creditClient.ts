@@ -1,6 +1,7 @@
 import { BFF_BASE_URL } from "../config";
-import { loadToken } from "../auth/tokenStore";
+import { authHeader } from "../auth/tokenStore";
 import { check401 } from "../auth/session";
+import { readJson } from "./http";
 
 export class InsufficientCreditsError extends Error {
   constructor(public required: number, public balance: number) {
@@ -9,16 +10,10 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
-async function authHeader(): Promise<Record<string, string>> {
-  const token = await loadToken();
-  if (!token) throw new Error("Not signed in");
-  return { Authorization: `Bearer ${token.accessToken}` };
-}
-
 export async function getBalance(): Promise<number> {
   const res = await fetch(`${BFF_BASE_URL}/api/v2/credits`, { headers: await authHeader() });
   if (!res.ok) throw new Error(`credits failed: ${check401(res.status)}`);
-  const data = (await res.json()) as { balance: number };
+  const data = await readJson<{ balance: number }>(res, "credits");
   return data.balance;
 }
 
@@ -32,7 +27,7 @@ export interface CreditPack {
 export async function getPacks(): Promise<{ packs: CreditPack[]; currency: string }> {
   const res = await fetch(`${BFF_BASE_URL}/api/v2/credits/packs`, { headers: await authHeader() });
   if (!res.ok) throw new Error(`packs failed: ${check401(res.status)}`);
-  return (await res.json()) as { packs: CreditPack[]; currency: string };
+  return readJson<{ packs: CreditPack[]; currency: string }>(res, "packs");
 }
 
 export async function createCheckout(packId: string): Promise<string> {
@@ -42,7 +37,7 @@ export async function createCheckout(packId: string): Promise<string> {
     body: JSON.stringify({ packId }),
   });
   if (!res.ok) throw new Error(`checkout failed: ${check401(res.status)}`);
-  const data = (await res.json()) as { url: string };
+  const data = await readJson<{ url: string }>(res, "checkout");
   return data.url;
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScriptDraft, TranscriptSegment } from "../types/job";
+import { formatClock } from "../audio/format";
 
 interface Props {
   draft: ScriptDraft;
@@ -15,8 +16,7 @@ const SPEAKER_COLORS = ["#644AFF", "#0BC673", "#F0A93D"];
 const colorFor = (index: number) => SPEAKER_COLORS[Math.abs(index) % SPEAKER_COLORS.length];
 
 function formatMs(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  return formatClock(ms / 1000, { padMinutes: true });
 }
 
 // Parse a user-typed time into ms. Accepts "mm:ss", "mm:ss.s", or bare seconds ("9.5").

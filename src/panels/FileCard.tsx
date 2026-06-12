@@ -20,6 +20,7 @@ import type { ScriptDraft } from "../types/job";
 import { InsufficientCreditsError } from "../jobs/creditClient";
 import { importAudioToProject, importAudioToTimeline, type AudioToImport } from "../host/premiere";
 import { makeAudioUrl, revokeAudioUrl, audioUrlToBytes } from "../audio/audioUrl";
+import { formatClock, formatMb } from "../audio/format";
 import { diag } from "../diag";
 
 type ImportTarget = "project" | "timeline";
@@ -179,6 +180,27 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
     revokeObjectUrl(s.mix?.audioUrl);
   }
 
+  // Turn stem bytes into a renderable StemView: compute peaks and mint a tracked audio handle.
+  // Shared by all three producers (fresh separation, history restore, script re-cut) so the
+  // StemView shape and defaults live in one place.
+  async function buildStemView(
+    bytes: ArrayBuffer,
+    id: string,
+    label: string,
+    selected: boolean,
+  ): Promise<StemView> {
+    const loaded = await loadPeaks(bytes, `${label || "stem"}.wav`);
+    return {
+      id,
+      label,
+      volume: 100,
+      selected,
+      peaks: loaded.peaks,
+      audioUrl: makeObjectUrl(bytes),
+      durationSec: loaded.durationSec,
+    };
+  }
+
   // Rehydrate a history-restored card on first expand: fetch the saved stems from the server
   // (R2-backed, egress-free) and jump straight to the "done" view — peaks, playback, mix, import
   // all work off the in-memory registry as usual. Gated on `collapsed` so the network/memory cost
@@ -190,7 +212,6 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
     const restored = entry.restored;
     let cancelled = false;
     let finished = false;
-    const minted: string[] = [];
     (async () => {
       setDurationSec(restored.durationSec);
       setSeparationJobId(restored.jobId);
@@ -198,22 +219,12 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
         restored.stems.map(async (m, idx): Promise<StemView | null> => {
           const bytes = await fetchStem(restored.jobId, m.stemId);
           if (cancelled) return null;
-          const peaks = await loadPeaks(bytes, `${m.label || "stem"}.wav`);
-          const url = makeObjectUrl(bytes);
-          minted.push(url);
-          return {
-            id: m.stemId,
-            label: m.label,
-            volume: 100,
-            selected: idx === 0,
-            peaks: peaks.peaks,
-            audioUrl: url,
-            durationSec: peaks.durationSec,
-          };
+          return buildStemView(bytes, m.stemId, m.label, idx === 0);
         }),
       );
       if (cancelled) {
-        minted.forEach((u) => revokeObjectUrl(u));
+        // Collapsed mid-fetch: free any handles we did mint before bailing.
+        built.forEach((s) => revokeObjectUrl(s?.audioUrl));
         return;
       }
       setStage({ kind: "done", stems: built.filter((s): s is StemView => s !== null), mix: null });
@@ -259,19 +270,7 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
       setSeparationJobId(jobId);
       diag(`FileCard: building ${separated.length} stem view(s)`);
       const stems: StemView[] = await Promise.all(
-        separated.map(async (s, idx) => {
-          const loaded = await loadPeaks(s.bytes, `${s.label || "stem"}.wav`);
-          const url = makeObjectUrl(s.bytes);
-          return {
-            id: s.stemId,
-            label: s.label,
-            volume: 100,
-            selected: idx === 0,
-            peaks: loaded.peaks,
-            audioUrl: url,
-            durationSec: loaded.durationSec,
-          };
-        }),
+        separated.map((s, idx) => buildStemView(s.bytes, s.stemId, s.label, idx === 0)),
       );
       diag(`FileCard: setStage done (${stems.length} stems)`);
       setStage({ kind: "done", stems, mix: null });
@@ -316,7 +315,8 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
       const audioUrl = makeObjectUrl(bytes);
       const mix: MixResult = {
         id: `mix-${Date.now()}`,
-        name: `${meta.fileName.replace(/\.[^.]+$/, "")} - mix.wav`,
+        // Base name only (no ".wav"); the extension is appended at the display/import edges.
+        name: `${meta.fileName.replace(/\.[^.]+$/, "")} - mix`,
         byteLength: bytes.byteLength,
         stemCount: selected.length,
         peaks: loaded.peaks,
@@ -383,17 +383,9 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
           .filter((seg) => seg.speakerIndex === sp.index)
           .map((seg) => ({ startMs: seg.startMs, endMs: seg.endMs }));
         const bytes = await segmentSpeaker(vocals, ranges);
-        const loaded = await loadPeaks(bytes, `${sp.label || "speaker"}.wav`);
-        const url = makeObjectUrl(bytes);
-        newStems.push({
-          id: `spk-${sp.index}`,
-          label: sp.label || `화자 ${sp.index}`,
-          volume: 100,
-          selected: newStems.length === 0,
-          peaks: loaded.peaks,
-          audioUrl: url,
-          durationSec: loaded.durationSec,
-        });
+        newStems.push(
+          await buildStemView(bytes, `spk-${sp.index}`, sp.label || `화자 ${sp.index}`, newStems.length === 0),
+        );
       }
       // Keep the original background stem — the script only re-cuts the speaker voices, the
       // separated background music should still be available alongside them.
@@ -461,12 +453,17 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
 
   async function importMix(target: ImportTarget) {
     if (stage.kind !== "done" || !stage.mix) return;
-    // Guard against an emptied name field (".wav" only) so the imported clip keeps a real name.
-    const base = stage.mix.name.replace(/\.wav$/i, "").trim();
-    const item: AudioToImport = {
-      fileName: `${base || "mix"}.wav`,
-      bytes: await audioUrlToBytes(stage.mix.audioUrl),
-    };
+    // `name` is the base; guard an emptied field so the imported clip keeps a real name.
+    const base = stage.mix.name.trim();
+    // Read the mix bytes inside a guard: this await is outside runImport's try, so a failure here
+    // (expired/unreadable audio handle) would otherwise be an unhandled rejection with no error UI.
+    let item: AudioToImport;
+    try {
+      item = { fileName: `${base || "mix"}.wav`, bytes: await audioUrlToBytes(stage.mix.audioUrl) };
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     // If this card's audio came from a timeline selection, drop the mix back at that clip's
     // position; otherwise importAudioToTimeline falls back to the playhead.
     await runImport(target, [item], "mix", entry.source?.timelineStartSec);
@@ -485,7 +482,7 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
     onRemove();
   }
 
-  const sizeMb = (meta.byteLength / 1024 / 1024).toFixed(1);
+  const sizeMb = formatMb(meta.byteLength);
 
   return (
     <div className={`file-card${collapsed ? " file-card--collapsed" : ""}`}>
@@ -646,16 +643,10 @@ function DoneSummary({ durationSec }: DoneSummaryProps) {
     <div className="done-summary">
       <div className="done-summary-info">
         <p className="done-summary-jobs">Stem separation</p>
-        <p className="done-summary-meta">{formatDuration(durationSec)}</p>
+        <p className="done-summary-meta">{formatClock(durationSec, { padMinutes: true })}</p>
       </div>
     </div>
   );
-}
-
-function formatDuration(durationSec: number): string {
-  const m = Math.floor(durationSec / 60);
-  const s = Math.floor(durationSec % 60);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 interface MixControlsProps {

@@ -39,6 +39,13 @@ export function revokeAudioUrl(url: string | null | undefined): void {
 export async function audioUrlToBytes(url: string): Promise<ArrayBuffer> {
   const cached = registry.get(url);
   if (cached) return cached;
-  // Not one of our handles (e.g. an externally supplied URL) — fall back to fetch.
-  return (await fetch(url)).arrayBuffer();
+  // Not in the registry (a revoked handle, or an externally supplied URL) — fall back to fetch.
+  // A synthetic mem:// handle that's no longer cached can't be fetched, so fail with a clear
+  // message instead of a raw network error bubbling up through mix/preview/import.
+  if (url.startsWith("mem://")) {
+    throw new Error("audio handle expired — this clip's bytes are no longer available");
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`audio handle unreadable (${res.status})`);
+  return res.arrayBuffer();
 }

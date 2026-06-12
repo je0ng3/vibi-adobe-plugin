@@ -65,6 +65,15 @@ app.route("/", peaksRoute);
 app.route("/", creditsRoute);
 app.route("/", paddleRoute);
 
+// Single error funnel: any route that lets a throw escape (DB/R2/Perso call, bad input) returns
+// a clean, uniform 500 here instead of Hono's default, which echoes the raw error message — and
+// thus internal pg/connection-string detail — back to the client. The real error is logged.
+app.onError((err, c) => {
+  console.error("[server] unhandled route error:", err);
+  return c.json({ error: "internal" }, 500);
+});
+app.notFound((c) => c.json({ error: "not_found" }, 404));
+
 const port = Number(process.env.PORT ?? 8787);
 
 async function main() {

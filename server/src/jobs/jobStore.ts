@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { query } from "../db/pool.js";
+import { refund } from "../credit/creditStore.js";
 
 export type JobKind = "separation";
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
@@ -17,6 +18,7 @@ export interface Job<T = unknown> {
   fileName?: string;
   byteLength?: number;
   durationMs?: number;
+  cost?: number;
   createdAt: number;
 }
 
@@ -33,6 +35,7 @@ interface JobRow {
   file_name: string | null;
   byte_length: string | number | null; // BIGINT comes back as a string from node-postgres
   duration_ms: number | null;
+  cost: number | null;
   created_at: Date;
 }
 
@@ -50,6 +53,7 @@ function rowToJob(r: JobRow): Job {
     fileName: r.file_name ?? undefined,
     byteLength: r.byte_length != null ? Number(r.byte_length) : undefined,
     durationMs: r.duration_ms ?? undefined,
+    cost: r.cost ?? undefined,
     createdAt: r.created_at.getTime(),
   };
 }
@@ -61,6 +65,7 @@ export interface JobMeta {
   fileName?: string | null;
   byteLength?: number | null;
   durationMs?: number | null;
+  cost?: number | null;
 }
 
 /**
@@ -74,13 +79,13 @@ export async function createJob(
   meta: JobMeta = {},
 ): Promise<{ job: Job; created: boolean }> {
   const id = `${kind.slice(0, 3)}-${randomUUID()}`;
-  const { idempotencyKey, projectId = null, fileName = null, byteLength = null, durationMs = null } = meta;
-  const cols = "id, kind, owner_sub, status, progress, project_id, file_name, byte_length, duration_ms";
-  const baseVals = [id, kind, ownerSub, projectId, fileName, byteLength, durationMs];
+  const { idempotencyKey, projectId = null, fileName = null, byteLength = null, durationMs = null, cost = null } = meta;
+  const cols = "id, kind, owner_sub, status, progress, project_id, file_name, byte_length, duration_ms, cost";
+  const baseVals = [id, kind, ownerSub, projectId, fileName, byteLength, durationMs, cost];
   if (idempotencyKey) {
     const ins = await query<JobRow>(
       `INSERT INTO jobs (${cols}, idempotency_key)
-       VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING *`,
       [...baseVals, idempotencyKey],
@@ -93,25 +98,13 @@ export async function createJob(
     );
     if (existing.rows[0]) return { job: rowToJob(existing.rows[0]), created: false };
   }
-  await query(
-    `INSERT INTO jobs (${cols}) VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $7)`,
+  // No idempotency key → a plain insert can't conflict; RETURNING * lets us reuse rowToJob
+  // instead of hand-rebuilding the Job (which would have to mirror every column by hand).
+  const ins = await query<JobRow>(
+    `INSERT INTO jobs (${cols}) VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $7, $8) RETURNING *`,
     baseVals,
   );
-  return {
-    job: {
-      id,
-      kind,
-      ownerSub,
-      status: "queued",
-      progress: 0,
-      projectId: projectId ?? undefined,
-      fileName: fileName ?? undefined,
-      byteLength: byteLength ?? undefined,
-      durationMs: durationMs ?? undefined,
-      createdAt: Date.now(),
-    },
-    created: true,
-  };
+  return { job: rowToJob(ins.rows[0]), created: true };
 }
 
 export async function getJob(id: string): Promise<Job | undefined> {
@@ -134,15 +127,24 @@ export async function updateJob(id: string, patch: Partial<Job>): Promise<void> 
 
 /**
  * On startup, mark any job still left mid-flight ("queued"/"processing") as failed: its driving
- * promise died with the previous process, so it would otherwise poll forever. Returns the count
- * marked. (Credits aren't auto-refunded here — the cost isn't persisted on the row — so a restart
- * mid-job is a known gap; restarts on the single instance are rare.)
+ * promise died with the previous process, so it would otherwise poll forever. Refunds each
+ * interrupted job's up-front charge (its in-memory BillingRef died with the process, so the
+ * runner catch can never fire). Refund is idempotent on `refund:<jobId>`, so if the runner HAD
+ * managed to refund before the crash this is a harmless no-op. Returns the count marked.
  */
 export async function failStaleJobs(): Promise<number> {
-  const res = await query(
+  const res = await query<{ id: string; owner_sub: string; cost: number | null }>(
     `UPDATE jobs SET status = 'failed', error = 'interrupted by server restart', updated_at = now()
-     WHERE status IN ('queued', 'processing')`,
+     WHERE status IN ('queued', 'processing')
+     RETURNING id, owner_sub, cost`,
   );
+  for (const r of res.rows) {
+    if (r.cost && r.cost > 0) {
+      await refund(r.owner_sub, r.cost, `refund:${r.id}`).catch((e) =>
+        console.error(`[startup] refund for interrupted job ${r.id} failed:`, e),
+      );
+    }
+  }
   return res.rowCount ?? 0;
 }
 

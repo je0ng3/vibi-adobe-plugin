@@ -1,20 +1,16 @@
 import { BFF_BASE_URL } from "../config";
-import { loadToken } from "../auth/tokenStore";
+import { authHeader } from "../auth/tokenStore";
 import { check401 } from "../auth/session";
 import { throwIfInsufficient } from "./creditClient";
 import { newIdempotencyKey } from "./idempotencyKey";
 import { buildMultipart } from "./multipart";
+import { readJson } from "./http";
+import { formatMb } from "../audio/format";
 import { diag } from "../diag";
 import type { ScriptDraft } from "../types/job";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 600;
-
-async function authHeader(): Promise<Record<string, string>> {
-  const token = await loadToken();
-  if (!token) throw new Error("Not signed in");
-  return { Authorization: `Bearer ${token.accessToken}` };
-}
 
 export interface SeparatedStem {
   stemId: string;
@@ -68,7 +64,7 @@ async function startSeparation(
     console.error("[separate] start failed", res.status, detail);
     throw new Error(`separation start failed: ${res.status} ${detail}`);
   }
-  const data = (await res.json()) as { jobId: string };
+  const data = await readJson<{ jobId: string }>(res, "separation start");
   return data.jobId;
 }
 
@@ -77,10 +73,26 @@ async function pollSeparation(jobId: string): Promise<SeparationStatus> {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`separation poll failed: ${check401(res.status)}`);
-  return (await res.json()) as SeparationStatus;
+  return readJson<SeparationStatus>(res, "separation poll");
 }
 
 export async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuffer> {
+  // The job is already done server-side and the bytes are durable (R2/disk); a transient blip
+  // shouldn't lose a stem the user paid for. Retry a couple of times before giving up — the
+  // caller (live result OR history restore) then has the bytes, or a clear failure.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * attempt));
+    try {
+      return await fetchStemOnce(jobId, stemId);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+async function fetchStemOnce(jobId: string, stemId: string): Promise<ArrayBuffer> {
   const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}/stem/${stemId}`, {
     headers: await authHeader(),
   });
@@ -91,7 +103,7 @@ export async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuf
   // (no R2 configured) returns the audio bytes inline, so branch on content-type.
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const { url } = (await res.json()) as { url: string };
+    const { url } = await readJson<{ url: string }>(res, "stem fetch");
     const r2 = await fetch(url);
     if (!r2.ok) throw new Error(`stem fetch (r2) failed: ${r2.status}`);
     return r2.arrayBuffer();
@@ -111,11 +123,25 @@ export async function runSeparation(
   projectId: string | null,
   onProgress?: (progress: number, reason: string | null) => void,
 ): Promise<SeparationOutcome> {
-  diag(`separate: POST start (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
+  diag(`separate: POST start (${formatMb(bytes.byteLength)}MB)`);
   const jobId = await startSeparation(bytes, fileName, durationMs, projectId);
   diag(`separate: jobId=${jobId}`);
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 5;
   for (let i = 0; i < MAX_POLLS; i++) {
-    const st = await pollSeparation(jobId);
+    let st: SeparationStatus;
+    try {
+      st = await pollSeparation(jobId);
+      consecutiveErrors = 0;
+    } catch (e) {
+      // The job runs server-side regardless; a transient network/5xx blip must not kill an
+      // already-charged separation. Tolerate a few in a row, then give up (still recoverable
+      // from history). A persistent failure (real outage / 401) exhausts the cap and throws.
+      if (++consecutiveErrors > MAX_CONSECUTIVE_ERRORS) throw e;
+      diag(`poll #${i}: transient error ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}: ${e instanceof Error ? e.message : String(e)}`);
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      continue;
+    }
     onProgress?.(st.progress, st.progressReason);
     if (i === 0 || st.status === "ready" || st.status === "failed") {
       diag(`poll #${i}: ${st.status} ${st.progress}% stems=${st.stems?.length ?? 0}`);
@@ -167,7 +193,7 @@ export async function listSeparations(projectId: string | null): Promise<SavedSe
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`history list failed: ${check401(res.status)}`);
-  const data = (await res.json()) as { separations: SavedSeparationWire[] };
+  const data = await readJson<{ separations: SavedSeparationWire[] }>(res, "history list");
   return (data.separations ?? []).map((s) => ({
     jobId: s.jobId,
     fileName: s.fileName ?? "audio",
@@ -194,5 +220,5 @@ export async function fetchSeparationScript(jobId: string): Promise<ScriptDraft>
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`script fetch failed: ${check401(res.status)}`);
-  return (await res.json()) as ScriptDraft;
+  return readJson<ScriptDraft>(res, "script fetch");
 }

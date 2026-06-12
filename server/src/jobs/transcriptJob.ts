@@ -46,7 +46,12 @@ export async function runTranscriptJob(
         console.error("[transcript] refund failed:", err),
       );
     }
-    await updateJob(jobId, { status: "failed", error: e instanceof Error ? e.message : String(e) });
+    // Guard the terminal write too: if it throws (the same DB blip that failed the job), an
+    // un-awaited reject would strand the job 'processing' and surface as an unhandled rejection.
+    await updateJob(jobId, {
+      status: "failed",
+      error: e instanceof Error ? e.message : String(e),
+    }).catch((err) => console.error("[transcript] failed-state write failed:", err));
   }
 }
 

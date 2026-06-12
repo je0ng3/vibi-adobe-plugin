@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Waveform } from "./Waveform";
 import { play, stop, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
+import { formatClock, formatMb } from "../audio/format";
 
 const canPlay = playbackSupported();
 
@@ -16,14 +17,6 @@ export interface MixResult {
 }
 
 type ImportTarget = "project" | "timeline";
-
-// "M:SS" elapsed/total readout shown while previewing.
-function fmtClock(sec: number): string {
-  const t = Number.isFinite(sec) && sec > 0 ? sec : 0;
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 interface Props {
   result: MixResult;
@@ -50,12 +43,17 @@ export function MixOutputView({
   useEffect(() => {
     if (!isActive || !audioUrl) return;
     let raf = 0;
-    void play(result.id, audioUrl, {
+    // UXP audio is fragile; if play rejects, drop out of the active state instead of leaving the
+    // button stuck on "playing" with no sound (and no unhandled rejection).
+    play(result.id, audioUrl, {
       durationSec: result.durationSec,
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);
       },
+    }).catch((e) => {
+      console.warn("[play] mix playback failed:", e);
+      onRequestActive(false);
     });
     const tick = () => {
       if (playingId() === result.id) setCurrentTime(getCurrentTime());
@@ -76,10 +74,7 @@ export function MixOutputView({
   }
 
   const progress = result.durationSec > 0 ? currentTime / result.durationSec : 0;
-  const sizeMb = (result.byteLength / 1024 / 1024).toFixed(1);
-  // Edit only the base name — the ".wav" is managed for the user (shown in the meta line and
-  // re-appended on every keystroke) so it can't be accidentally deleted and break the import.
-  const baseName = result.name.replace(/\.wav$/i, "");
+  const sizeMb = formatMb(result.byteLength);
 
   // Browser: toggle in-panel playback. UXP (no audio output): open the mix in the OS default player.
   function preview() {
@@ -88,7 +83,8 @@ export function MixOutputView({
       onRequestActive(!isActive);
       return;
     }
-    previewInDefaultApp(audioUrl, `${baseName || "mix"}.wav`).catch((e) => console.warn("[preview]", e));
+    // `result.name` is the base name; the ".wav" is managed here and at import (see FileCard).
+    previewInDefaultApp(audioUrl, `${result.name || "mix"}.wav`).catch((e) => console.warn("[preview]", e));
   }
 
   return (
@@ -110,12 +106,12 @@ export function MixOutputView({
           {onRename ? (
             <input
               className="mix-output-name-input"
-              value={baseName}
+              value={result.name}
               aria-label="Mix name — click to rename"
               title="Click to rename"
               placeholder="Mix name"
               spellCheck={false}
-              onChange={(e) => onRename(`${e.currentTarget.value}.wav`)}
+              onChange={(e) => onRename(e.currentTarget.value)}
             />
           ) : (
             <p className="mix-output-name">{result.name}</p>
@@ -123,7 +119,7 @@ export function MixOutputView({
           <p className="mix-output-meta">WAV · {result.stemCount} stems · {sizeMb} MB</p>
           {canPlay && isActive && result.durationSec > 0 && (
             <p className="preview-time">
-              {fmtClock(currentTime)} / {fmtClock(result.durationSec)}
+              {formatClock(currentTime)} / {formatClock(result.durationSec)}
             </p>
           )}
         </div>

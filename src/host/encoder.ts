@@ -1,6 +1,7 @@
 import { storage } from "uxp";
 import { EncoderManager, TickTime } from "premierepro";
 import type { LoadedAudioSource } from "../input/audioPicker";
+import { formatMb } from "../audio/format";
 
 // Video containers we extract audio from locally before separation. Premiere/AME decode the
 // container, so the exact video codec inside (H.264, ProRes, …) doesn't matter — we only pull
@@ -144,7 +145,7 @@ export async function convertVideoToAudio(
 
     if (size > 0) {
       everGrew = true;
-      onStatus(`Extracting audio from "${sourceName}"… (${(size / 1_048_576).toFixed(1)} MB)`);
+      onStatus(`Extracting audio from "${sourceName}"… (${formatMb(size)} MB)`);
       stable = size === lastSize ? stable + 1 : 0;
       lastSize = size;
       if (stable >= STABLE_TICKS) break;

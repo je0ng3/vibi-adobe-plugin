@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { currentUser, requireAuth } from "../auth/middleware.js";
-import { createJob, getJob, listReadySeparations, deleteJob } from "../jobs/jobStore.js";
+import { createJob, getJob, listReadySeparations, deleteJob, updateJob } from "../jobs/jobStore.js";
 import { purgeSeparationArtifacts } from "../jobs/artifacts.js";
 import { runSeparationJob, type SeparationResult } from "../jobs/separationJob.js";
 import { runQueued, isQueueFull } from "../jobs/jobQueue.js";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getFullAudioSeparationScript } from "../perso/persoClient.js";
 import { ObjectKey, respondStem } from "./downloadResponder.js";
-import { creditsForDuration, deduct, getBalance } from "../credit/creditStore.js";
+import { creditsForDuration, deduct, getBalance, refund } from "../credit/creditStore.js";
 import { ACCEPTED_AUDIO_LABEL, isAcceptedAudioName } from "../util/audioFormat.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { uploadLimit } from "../middleware/uploadLimit.js";
@@ -68,28 +68,62 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   if (!(await deduct(user.sub, cost, "separation", idemKey))) {
     return c.json({ error: "insufficient_credits", required: cost, balance: await getBalance(user.sub) }, 402);
   }
-  const { job, created } = await createJob("separation", user.sub, {
-    idempotencyKey: idemKey,
-    projectId,
-    fileName: file.name || "audio.wav",
-    byteLength: file.size,
-    durationMs,
-  });
+  // Past the deduct the user is charged. If setup throws before the runner's own catch can fire
+  // (createJob, or spooling the upload), refund the up-front charge so a failed setup never leaves
+  // the user out of pocket. cost is persisted on the row so a restart mid-job can also refund.
+  let creation;
+  try {
+    creation = await createJob("separation", user.sub, {
+      idempotencyKey: idemKey,
+      projectId,
+      fileName: file.name || "audio.wav",
+      byteLength: file.size,
+      durationMs,
+      cost,
+    });
+  } catch (e) {
+    // No job row yet → refund on a setup-scoped ref (distinct from the runner's refund:<jobId>,
+    // so the two can't collide). Stable across client retries via the idempotency key.
+    await refund(user.sub, cost, `refund:setup:${idemKey ?? user.sub}:${cost}`).catch((err) =>
+      console.error("[separate] setup refund (createJob) failed:", err),
+    );
+    throw e;
+  }
+  const { job, created } = creation;
   // Only start the work on first creation; a retry returns the in-flight job's id.
   if (created) {
     // Spool the upload to a temp file and drop the in-memory buffer immediately, so a job
     // WAITING for a concurrency slot holds only a path — not its ≤200MB buffer. Without this,
     // a burst of queued jobs would each pin 200MB and OOM the 1GB instance.
     const tmpPath = join(tmpdir(), `vibi-sep-${job.id}.bin`);
-    await writeFile(tmpPath, Buffer.from(await file.arrayBuffer()));
+    try {
+      await writeFile(tmpPath, Buffer.from(await file.arrayBuffer()));
+    } catch (e) {
+      // Spool failed before the job could run → it'd otherwise sit 'queued' forever. Refund and
+      // mark it failed. refund:<jobId> matches the runner's ref (idempotent, no double-refund).
+      await refund(user.sub, cost, `refund:${job.id}`).catch((err) =>
+        console.error("[separate] spool refund failed:", err),
+      );
+      await updateJob(job.id, { status: "failed", error: "upload spool failed" }).catch(() => {});
+      throw e;
+    }
     const fileName = file.name || "audio.wav";
     // runQueued caps concurrent runs (jobQueue.ts); excess jobs wait with their row "queued".
-    // Credits are refunded on failure inside runSeparationJob.
     void runQueued(async () => {
       try {
         const buf = await readFile(tmpPath);
         const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
         await runSeparationJob(job.id, ab, fileName, { ownerSub: user.sub, cost });
+      } catch (e) {
+        // A throw BEFORE runSeparationJob's own try (e.g. readFile) would otherwise strand the job
+        // and skip its refund — and, as a detached `void` task, surface as an unhandled rejection.
+        // Refund + fail here too; runSeparationJob swallows its own errors, so this never doubles up.
+        console.error(`[separate] job ${job.id} runner setup failed:`, e);
+        await refund(user.sub, cost, `refund:${job.id}`).catch(() => {});
+        await updateJob(job.id, {
+          status: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        }).catch(() => {});
       } finally {
         await unlink(tmpPath).catch(() => {});
       }

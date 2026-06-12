@@ -25,6 +25,10 @@ export function getPool(): pg.Pool {
     statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 30_000),
     idle_in_transaction_session_timeout: 30_000,
   });
+  // node-postgres emits 'error' on the Pool when an IDLE backend connection drops (server
+  // restart, network blip). With no listener that event is thrown and crashes the process —
+  // a swallow-and-log listener keeps the pool alive; the next query just reconnects.
+  pool.on("error", (err) => console.error("[pg] idle client error:", err));
   return pool;
 }
 
@@ -111,6 +115,9 @@ export async function ensureSchema(): Promise<void> {
       file_name       TEXT,
       byte_length     BIGINT,
       duration_ms     INTEGER,
+      -- Credits charged up-front for this job. Persisted so an interrupted job can be refunded
+      -- on restart (the in-memory BillingRef dies with the process — see failStaleJobs).
+      cost            INTEGER,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -120,6 +127,7 @@ export async function ensureSchema(): Promise<void> {
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS file_name   TEXT;
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS byte_length BIGINT;
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cost        INTEGER;
     CREATE INDEX IF NOT EXISTS jobs_created_at_idx ON jobs (created_at);
     -- Lists a user's saved separations for the open project, newest first.
     CREATE INDEX IF NOT EXISTS jobs_history_idx ON jobs (owner_sub, project_id, kind, status, created_at);

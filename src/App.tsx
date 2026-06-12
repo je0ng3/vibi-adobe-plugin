@@ -35,7 +35,7 @@ export function App() {
   // a cryptic "failed: 401" error deep in a feature. (Token refresh would need BFF support.)
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      void clearToken();
+      void clearToken().catch((e) => console.warn("[auth] token clear failed:", e));
       setState((prev) => (prev.kind === "signed-in" ? { kind: "signed-out", notice: EXPIRED_NOTICE } : prev));
     });
     return () => setUnauthorizedHandler(null);
