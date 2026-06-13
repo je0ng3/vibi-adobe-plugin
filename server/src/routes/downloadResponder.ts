@@ -3,7 +3,7 @@ import { objectStore } from "../jobs/objectStore.js";
 import { getStemBytes, stemFilePath } from "../jobs/stemStore.js";
 
 /**
- * 큰 산출물(stem / dub audio) 다운로드 응답 단일 진입점. vibi-bff 의 `respondDownload` 대응.
+ * 큰 산출물(stem) 다운로드 응답 단일 진입점. vibi-bff 의 `respondDownload` 대응.
  *
  * - objectStore != null → 디스크 파일을 R2 에 (멱등) 업로드 후 SigV4 presigned URL 을
  *   `{ url }` JSON 으로 반환. 클라가 그 URL 을 (auth 헤더 없이) 직접 GET → R2 egress 무료.
@@ -53,13 +53,11 @@ export async function respondStem(
  * R2 object key 단일 소스. 경로 규칙(`<prefix>/<jobId>/...`)을 모아두면 prefix 리네임/
  * lifecycle rule 감사 시 단일 grep 으로 끝남.
  *
- * 디스크에는 stemStore 가 모두 `<stemId>.wav` 로 저장하지만(컨텐츠는 stem=wav, dub=mp3),
- * R2 key 의 확장자는 표시용일 뿐 — 실제 Content-Type 은 presigned URL 의 response-content-type
- * 으로 강제된다.
+ * 디스크에는 stemStore 가 모두 `<stemId>.wav` 로 저장하지만, R2 key 의 확장자는 표시용일 뿐 —
+ * 실제 Content-Type 은 presigned URL 의 response-content-type 으로 강제된다.
  */
 export const ObjectKey = {
   separationStem: (jobId: string, stemId: string): string => `separation/${jobId}/${stemId}.wav`,
   // All of a separation's stems share this prefix — used to purge them from R2 in one sweep.
   separationPrefix: (jobId: string): string => `separation/${jobId}/`,
-  dubAudio: (jobId: string, stemId: string): string => `dub/${jobId}/${stemId}.mp3`,
 };
