@@ -1,6 +1,7 @@
 import { getFullSttScript, getProgress, submitStt, uploadAudio } from "../perso/persoClient.js";
 import { updateJob } from "./jobStore.js";
 import { refund, type BillingRef } from "../credit/creditStore.js";
+import { requestSweep } from "./cleanup.js";
 import type { ScriptDraft, Speaker, TranscriptSegment } from "../types/script.js";
 import type { PersoScriptSentence, PersoScriptSpeaker } from "../perso/persoTypes.js";
 
@@ -52,6 +53,10 @@ export async function runTranscriptJob(
       status: "failed",
       error: e instanceof Error ? e.message : String(e),
     }).catch((err) => console.error("[transcript] failed-state write failed:", err));
+  } finally {
+    // DB already awake from this job's writes — GC now (throttled) so the idle sweep interval
+    // never has to wake Neon on its own.
+    requestSweep();
   }
 }
 

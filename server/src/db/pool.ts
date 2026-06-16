@@ -20,6 +20,12 @@ export function getPool(): pg.Pool {
     // Bound the pool and kill runaway queries / leaked transactions so a webhook or retry
     // storm can't pin connections indefinitely.
     max: Number(process.env.DB_POOL_MAX ?? 10),
+    // Neon bills compute whenever it's awake, so the pool must go fully quiet when idle.
+    // node-postgres keeps no minimum and (with TCP keepAlive off, the default) sends no idle
+    // keepalive pings, so a 30s idleTimeout drains every connection 30s after the last query —
+    // then nothing touches the DB and Neon can autosuspend. Do NOT add `keepAlive: true` or a
+    // min-pool here, and keep the cleanup sweep idle interval long (see jobs/cleanup.ts), or
+    // the DB never suspends and the free compute allowance is burned 24/7.
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 30_000),

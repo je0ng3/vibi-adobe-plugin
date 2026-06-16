@@ -13,6 +13,7 @@ import { objectStore } from "./objectStore.js";
 import { ObjectKey } from "../routes/downloadResponder.js";
 import { transcodeToWav } from "../util/transcode.js";
 import { refund, type BillingRef } from "../credit/creditStore.js";
+import { requestSweep } from "./cleanup.js";
 
 export type { BillingRef };
 
@@ -125,6 +126,10 @@ export async function runSeparationJob(
       status: "failed",
       error: e instanceof Error ? e.message : String(e),
     }).catch((err) => console.error("[separation] failed-state write failed:", err));
+  } finally {
+    // The DB is already awake from this job's writes — GC now (throttled) so the long idle
+    // sweep interval never has to wake Neon on its own just to clean up after this job.
+    requestSweep();
   }
 }
 
