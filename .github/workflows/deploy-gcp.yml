@@ -66,7 +66,27 @@ jobs:
             # Pinned: trust only this host key, so a MITM during the deploy (which would otherwise
             # capture the deploy key, the rsync'd source, and plugin.env secrets) can't impersonate
             # the VM.
-            printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            #
+            # We pin the host KEY BYTES but re-key them to the exact host:port this job connects
+            # to. SSH matches known_hosts on the hostname field, so a secret captured against a
+            # different string (e.g. the domain when DEPLOY_SSH_HOST is the raw IP, or a non-22
+            # port) would otherwise fail with "Host key verification failed" even though the key
+            # is correct. Re-keying keeps the security guarantee (the VM must still present these
+            # exact keys) while being agnostic to how the secret was captured.
+            if [ "$SSH_PORT" = "22" ]; then
+              host_spec="$DEPLOY_SSH_HOST"
+            else
+              host_spec="[$DEPLOY_SSH_HOST]:$SSH_PORT"
+            fi
+            : > ~/.ssh/known_hosts
+            printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" | while IFS= read -r line; do
+              # skip blanks and comments (ssh-keyscan emits "# host SSH-2.0-..." banner lines)
+              case "$line" in '' | '#'*) continue ;; esac
+              # drop the leading hostname field, keep "<keytype> <base64> [comment]"
+              key_part=$(printf '%s' "$line" | sed -E 's/^[^[:space:]]+[[:space:]]+//')
+              printf '%s %s\n' "$host_spec" "$key_part" >> ~/.ssh/known_hosts
+            done
+            test -s ~/.ssh/known_hosts || { echo "DEPLOY_SSH_KNOWN_HOSTS has no usable host-key lines"; exit 1; }
           else
             # Fallback (TOFU): no pin set — accept whatever key the host presents this run.
             # Set DEPLOY_SSH_KNOWN_HOSTS to close this trust-on-first-use window.
