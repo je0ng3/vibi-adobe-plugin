@@ -54,11 +54,26 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          # Pinned host key(s) for the VM. Get them once with:
+          #   ssh-keyscan -p <port> <host>
+          # and paste the output into the DEPLOY_SSH_KNOWN_HOSTS repo secret.
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "$SSH_PORT" -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$DEPLOY_SSH_KNOWN_HOSTS" ]; then
+            # Pinned: trust only this host key, so a MITM during the deploy (which would otherwise
+            # capture the deploy key, the rsync'd source, and plugin.env secrets) can't impersonate
+            # the VM.
+            printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            # Fallback (TOFU): no pin set — accept whatever key the host presents this run.
+            # Set DEPLOY_SSH_KNOWN_HOSTS to close this trust-on-first-use window.
+            echo "::warning::DEPLOY_SSH_KNOWN_HOSTS not set — falling back to ssh-keyscan (TOFU, MITM-able). Pin the host key."
+            ssh-keyscan -p "$SSH_PORT" -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Materialize plugin.env from secret
         env:
