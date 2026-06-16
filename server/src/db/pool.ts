@@ -137,8 +137,13 @@ export async function ensureSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS jobs_created_at_idx ON jobs (created_at);
     -- Lists a user's saved separations for the open project, newest first.
     CREATE INDEX IF NOT EXISTS jobs_history_idx ON jobs (owner_sub, project_id, kind, status, created_at);
-    -- Unique index (not column constraint) so a client retry resolves to the same job;
-    -- multiple NULLs are allowed, so key-less submits are unaffected.
-    CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency_key_idx ON jobs (idempotency_key);
+    -- Idempotency is scoped PER OWNER: the Idempotency-Key is only client-unique, so a global
+    -- unique index let two different users' keys collide (one user's retry would resolve to the
+    -- other's job, or fall through and duplicate work). Composite (owner_sub, idempotency_key)
+    -- isolates each user. Multiple NULLs are allowed, so key-less submits are unaffected.
+    -- Relaxation of the old global index, so no existing row can violate it. Drop the old one.
+    DROP INDEX IF EXISTS jobs_idempotency_key_idx;
+    CREATE UNIQUE INDEX IF NOT EXISTS jobs_owner_idempotency_key_idx
+      ON jobs (owner_sub, idempotency_key);
   `);
 }

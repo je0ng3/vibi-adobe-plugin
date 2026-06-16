@@ -22,7 +22,12 @@ const MAX_AUDIO_BYTES = 200 * 1024 * 1024; // 200 MB — keep in sync with src/c
 // After requireAuth so it keys on the user (c.get("user")), not a shared NAT IP.
 const separateLimiter = rateLimit({ windowMs: 60_000, max: 10 });
 
-separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAuth, separateLimiter, async (c) => {
+// Runs BEFORE requireAuth/uploadLimit: caps how often an unauthenticated caller can make the
+// server stream (up to MAX_AUDIO_BYTES of) request body only to be 401'd. Keyed on IP since
+// there's no user yet; deliberately looser than the per-user limit so a shared NAT isn't starved.
+const separateIpLimiter = rateLimit({ windowMs: 60_000, max: 30 });
+
+separationRoute.post("/api/v2/separate", separateIpLimiter, uploadLimit(MAX_AUDIO_BYTES), requireAuth, separateLimiter, async (c) => {
   const user = currentUser(c);
   let form: FormData;
   try {
@@ -54,6 +59,12 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   // Stable per-submit key (sent by the client) makes the charge + job creation idempotent,
   // so a transport-level retry of this POST can't double-charge or spawn a duplicate job.
   const idemKey = c.req.header("Idempotency-Key") || undefined;
+  // The credit ledger's idempotency is global on (kind, ref_id), but the Idempotency-Key is
+  // only client-unique. Namespace the consume ref by user so two different users sending the
+  // same key can't collide — which would skip the second user's charge (a free separation).
+  // The job idempotency is scoped per-owner in the DB index (see ensureSchema), so the raw
+  // key is fine there.
+  const consumeRef = idemKey ? `${user.sub}:${idemKey}` : undefined;
   const durationMs = Number(form.get("durationMs")) || 0;
   // Which Premiere project this belongs to — scopes the saved-separation history list. The
   // client sends a stable key (guid/path/name) or "default"; treat blank as null.
@@ -65,7 +76,7 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
   if (isQueueFull()) {
     return c.json({ error: "server_busy", retryAfterMs: 30_000 }, 503);
   }
-  if (!(await deduct(user.sub, cost, "separation", idemKey))) {
+  if (!(await deduct(user.sub, cost, "separation", consumeRef))) {
     return c.json({ error: "insufficient_credits", required: cost, balance: await getBalance(user.sub) }, 402);
   }
   // Past the deduct the user is charged. If setup throws before the runner's own catch can fire
@@ -83,8 +94,9 @@ separationRoute.post("/api/v2/separate", uploadLimit(MAX_AUDIO_BYTES), requireAu
     });
   } catch (e) {
     // No job row yet → refund on a setup-scoped ref (distinct from the runner's refund:<jobId>,
-    // so the two can't collide). Stable across client retries via the idempotency key.
-    await refund(user.sub, cost, `refund:setup:${idemKey ?? user.sub}:${cost}`).catch((err) =>
+    // so the two can't collide). Includes user.sub so two users sharing an Idempotency-Key get
+    // distinct refs; stable across one user's client retries via the idempotency key.
+    await refund(user.sub, cost, `refund:setup:${user.sub}:${idemKey ?? cost}`).catch((err) =>
       console.error("[separate] setup refund (createJob) failed:", err),
     );
     throw e;

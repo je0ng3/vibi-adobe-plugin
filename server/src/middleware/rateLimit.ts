@@ -37,7 +37,23 @@ function defaultKey(c: Context): string {
   // Prefer the authenticated user; fall back to client IP.
   const user = c.get("user") as { sub?: string } | undefined;
   if (user?.sub) return `u:${user.sub}`;
+  return `ip:${clientIp(c)}`;
+}
+
+// Number of trusted reverse-proxy hops in front of this app (Caddy in prod = 1; a Cloud Run
+// front-end LB may add more). The client-controlled, spoofable part of X-Forwarded-For is the
+// LEFT; each trusted proxy APPENDS the real peer IP on the right. So the trustworthy client IP
+// is the Nth-from-the-end, where N = hop count. Taking split(",")[0] (the leftmost) let a
+// caller forge any IP and sidestep IP-keyed limits — pin to the trusted hop instead.
+const TRUSTED_PROXY_HOPS = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS ?? 1));
+
+function clientIp(c: Context): string {
   const fwd = c.req.header("x-forwarded-for");
-  const ip = fwd?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
-  return `ip:${ip}`;
+  if (fwd) {
+    const parts = fwd.split(",").map((s) => s.trim()).filter(Boolean);
+    const idx = parts.length - TRUSTED_PROXY_HOPS;
+    if (idx >= 0 && parts[idx]) return parts[idx];
+    if (parts.length > 0) return parts[0]; // fewer hops than expected — best effort.
+  }
+  return c.req.header("x-real-ip") || "unknown";
 }

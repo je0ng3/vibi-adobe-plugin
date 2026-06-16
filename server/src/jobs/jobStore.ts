@@ -86,7 +86,7 @@ export async function createJob(
     const ins = await query<JobRow>(
       `INSERT INTO jobs (${cols}, idempotency_key)
        VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (idempotency_key) DO NOTHING
+       ON CONFLICT (owner_sub, idempotency_key) DO NOTHING
        RETURNING *`,
       [...baseVals, idempotencyKey],
     );
