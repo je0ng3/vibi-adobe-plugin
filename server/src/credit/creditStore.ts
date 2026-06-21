@@ -1,7 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { query, withTransaction } from "../db/pool.js";
 
 const SIGNUP_BONUS_CREDITS = Number(process.env.SIGNUP_BONUS_CREDITS ?? 10);
+
+// credit_ledger.ref_id is varchar(64) in the existing (Flyway-managed) schema, which this
+// server must not ALTER. Some callers build refs that exceed 64 chars — e.g. the per-user
+// idempotency namespace `${user.sub}:${idempotencyKey}` (a UUID sub + a client key already
+// overflows). An over-long INSERT throws Postgres 22001 (value too long) and 500s the request.
+// Map any over-long ref to a deterministic 64-char sha256 hex digest: stable across retries
+// (so the unique (kind, ref_id) idempotency still holds) and exactly fits varchar(64). Refs
+// already ≤64 are passed through unchanged, preserving existing rows and human-readable refs.
+const MAX_REF_ID_LEN = 64;
+function boundRefId(ref: string): string {
+  return ref.length <= MAX_REF_ID_LEN ? ref : createHash("sha256").update(ref).digest("hex");
+}
 
 export type Provider = "google" | "apple";
 
@@ -91,7 +103,7 @@ export async function deduct(
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error(`deduct: amount must be a positive integer, got ${amount}`);
   }
-  const refId = ref ?? randomUUID();
+  const refId = boundRefId(ref ?? randomUUID());
   try {
     return await withTransaction(async (client) => {
       const claim = await client.query(
@@ -124,12 +136,13 @@ export async function refund(userId: string, amount: number, ref: string): Promi
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error(`refund: amount must be a positive integer, got ${amount}`);
   }
+  const refId = boundRefId(ref);
   return withTransaction(async (client) => {
     const ledger = await client.query(
       `INSERT INTO credit_ledger (user_id, kind, ref_id, credits) VALUES ($1, 'refund', $2, $3)
        ON CONFLICT (kind, ref_id) DO NOTHING
        RETURNING id`,
-      [userId, ref, amount],
+      [userId, refId, amount],
     );
     if (ledger.rowCount === 0) {
       const cur = await client.query<{ balance: number }>(
