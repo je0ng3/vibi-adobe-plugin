@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, cpSync } from "node:fs";
+import { existsSync, mkdirSync, cpSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -11,6 +11,11 @@ if (!existsSync(resolve(root, "dist"))) {
   process.exit(1);
 }
 
+// Start from a clean slate every time: `zip -r` APPENDS into an existing archive and cpSync
+// overlays without pruning, so a previously-packaged file that was later removed/renamed in dist/
+// would otherwise ghost into the shipped .ccx. Remove the prior stage + .ccx first.
+rmSync(stage, { recursive: true, force: true });
+rmSync(out, { force: true });
 mkdirSync(stage, { recursive: true });
 // dist/ is already a self-contained UXP plugin folder: the build (vite copyPluginFiles) writes
 // dist/manifest.json AND dist/icons alongside index.html + index.js + index.css. So copy dist/

@@ -8,7 +8,7 @@ import {
 } from "../perso/persoClient.js";
 import { extractTar } from "../perso/tar.js";
 import { updateJob } from "./jobStore.js";
-import { putStemBytes, stemFilePath } from "./stemStore.js";
+import { deleteStemsForJob, putStemBytes, stemFilePath } from "./stemStore.js";
 import { objectStore } from "./objectStore.js";
 import { ObjectKey } from "../routes/downloadResponder.js";
 import { transcodeToWav } from "../util/transcode.js";
@@ -96,19 +96,33 @@ export async function runSeparationJob(
     }
 
     // Push stems to R2 now (not only lazily on first download) so the separation survives as
-    // durable history: the local disk copy is cleaned after JOB_TTL_MS, but R2 keeps the bytes
-    // (egress-free) for the panel to restore on any later sign-in. No-op without R2 configured.
+    // durable history: R2 keeps the bytes (egress-free) for the panel to restore on any later
+    // sign-in. No-op without R2 configured.
     if (objectStore) {
       const store = objectStore;
       // Independent uploads — run them concurrently so N stems cost one round-trip's wall-clock,
-      // not N. Each failure is logged and swallowed so one bad upload doesn't fail the others.
-      await Promise.all(
+      // not N. A failed upload resolves to false (logged) so one bad upload doesn't fail the others.
+      const uploaded = await Promise.all(
         stems.map((s) =>
           store
             .uploadIfAbsent(ObjectKey.separationStem(jobId, s.stemId), stemFilePath(jobId, s.stemId), "audio/wav")
-            .catch((e) => console.warn(`[separation] R2 upload ${s.stemId} failed:`, e)),
+            .catch((e) => {
+              console.warn(`[separation] R2 upload ${s.stemId} failed:`, e);
+              return false;
+            }),
         ),
       );
+      // Once every stem is durably in R2, drop the local disk copy immediately. STEM_DIR is a
+      // RAM-backed tmpfs on the e2-micro and "ready" history is retained for up to 90 days, so
+      // leaving the bytes on disk would steadily fill RAM and OOM the box. The download path
+      // re-serves straight from R2 (uploadIfAbsent finds the object present with no local file),
+      // so this is safe. If any upload failed, keep the disk copy as the fallback source for
+      // respondStem and a later cleanup-sweep retry.
+      if (uploaded.every(Boolean)) {
+        await deleteStemsForJob(jobId).catch((e) =>
+          console.warn(`[separation] local stem cleanup for ${jobId} failed:`, e),
+        );
+      }
     }
 
     await updateJob(jobId, { status: "ready", progress: 100, progressReason: "Done", result: { stems, projectSeq } });

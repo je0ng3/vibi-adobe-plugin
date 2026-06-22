@@ -76,6 +76,12 @@ authRoute.post("/api/v2/auth/device/poll", async (c) => {
 authRoute.get("/api/v2/auth/google/start", async (c) => {
   const userCode = c.req.query("code") ?? "";
   if (!userCode) return c.text("missing code", 400);
+  // Require the explicit acknowledgement the /device page collects via a `required` checkbox.
+  // Server-side backstop for the device-flow consent-relay phishing mitigation: a hand-crafted or
+  // JS-disabled request that skips the checkbox is rejected here, not only in the browser.
+  if (c.req.query("ack") !== "on") {
+    return c.text("Please confirm you started this sign-in from the Vibi Separate panel.", 400);
+  }
   let client: OAuth2Client;
   try {
     client = googleClient();

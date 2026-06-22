@@ -4,7 +4,7 @@ import { check401 } from "../auth/session";
 import { throwIfInsufficient } from "./creditClient";
 import { newIdempotencyKey } from "./idempotencyKey";
 import { buildMultipart } from "./multipart";
-import { readJson } from "./http";
+import { fetchWithTimeout, readJson, TRANSFER_TIMEOUT_MS } from "./http";
 import { formatMb } from "../audio/format";
 import { diag } from "../diag";
 import type { ScriptDraft } from "../types/job";
@@ -48,15 +48,19 @@ async function startSeparation(
     fileName,
     durationMs,
   });
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate`, {
-    method: "POST",
-    headers: {
-      ...(await authHeader()),
-      "Idempotency-Key": newIdempotencyKey(),
-      "Content-Type": contentType,
+  const res = await fetchWithTimeout(
+    `${BFF_BASE_URL}/api/v2/separate`,
+    {
+      method: "POST",
+      headers: {
+        ...(await authHeader()),
+        "Idempotency-Key": newIdempotencyKey(),
+        "Content-Type": contentType,
+      },
+      body,
     },
-    body,
-  });
+    TRANSFER_TIMEOUT_MS,
+  );
   await throwIfInsufficient(res);
   if (!res.ok) {
     check401(res.status);
@@ -69,7 +73,7 @@ async function startSeparation(
 }
 
 async function pollSeparation(jobId: string): Promise<SeparationStatus> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/separate/${jobId}`, {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`separation poll failed: ${check401(res.status)}`);
@@ -93,9 +97,11 @@ export async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuf
 }
 
 async function fetchStemOnce(jobId: string, stemId: string): Promise<ArrayBuffer> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}/stem/${stemId}`, {
-    headers: await authHeader(),
-  });
+  const res = await fetchWithTimeout(
+    `${BFF_BASE_URL}/api/v2/separate/${jobId}/stem/${stemId}`,
+    { headers: await authHeader() },
+    TRANSFER_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`stem fetch failed: ${check401(res.status)}`);
   // R2 mode: server returns { url } with a presigned R2 URL instead of the bytes. Fetch it
   // directly WITHOUT the auth header — the presigned URL self-authenticates (SigV4 in the
@@ -104,7 +110,7 @@ async function fetchStemOnce(jobId: string, stemId: string): Promise<ArrayBuffer
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     const { url } = await readJson<{ url: string }>(res, "stem fetch");
-    const r2 = await fetch(url);
+    const r2 = await fetchWithTimeout(url, {}, TRANSFER_TIMEOUT_MS);
     if (!r2.ok) throw new Error(`stem fetch (r2) failed: ${r2.status}`);
     return r2.arrayBuffer();
   }
@@ -189,7 +195,7 @@ interface SavedSeparationWire {
 // panel open to rebuild the result cards (the server is the source of truth across devices).
 export async function listSeparations(projectId: string | null): Promise<SavedSeparation[]> {
   const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separations${qs}`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/separations${qs}`, {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`history list failed: ${check401(res.status)}`);
@@ -207,7 +213,7 @@ export async function listSeparations(projectId: string | null): Promise<SavedSe
 
 // Permanently delete a saved separation (row + stems on disk and R2). Idempotent server-side.
 export async function deleteSeparation(jobId: string): Promise<void> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/separate/${jobId}`, {
     method: "DELETE",
     headers: await authHeader(),
   });
@@ -216,7 +222,7 @@ export async function deleteSeparation(jobId: string): Promise<void> {
 
 // Fetch the diarized script the separation already produced (fast — no separate STT job).
 export async function fetchSeparationScript(jobId: string): Promise<ScriptDraft> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/separate/${jobId}/script`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/separate/${jobId}/script`, {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`script fetch failed: ${check401(res.status)}`);

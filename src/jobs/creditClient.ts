@@ -1,7 +1,7 @@
 import { BFF_BASE_URL } from "../config";
 import { authHeader } from "../auth/tokenStore";
 import { check401 } from "../auth/session";
-import { readJson } from "./http";
+import { fetchWithTimeout, readJson } from "./http";
 
 export class InsufficientCreditsError extends Error {
   constructor(public required: number, public balance: number) {
@@ -11,7 +11,7 @@ export class InsufficientCreditsError extends Error {
 }
 
 export async function getBalance(): Promise<number> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/credits`, { headers: await authHeader() });
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/credits`, { headers: await authHeader() });
   if (!res.ok) throw new Error(`credits failed: ${check401(res.status)}`);
   const data = await readJson<{ balance: number }>(res, "credits");
   return data.balance;
@@ -25,13 +25,13 @@ export interface CreditPack {
 }
 
 export async function getPacks(): Promise<{ packs: CreditPack[]; currency: string }> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/credits/packs`, { headers: await authHeader() });
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/credits/packs`, { headers: await authHeader() });
   if (!res.ok) throw new Error(`packs failed: ${check401(res.status)}`);
   return readJson<{ packs: CreditPack[]; currency: string }>(res, "packs");
 }
 
 export async function createCheckout(packId: string): Promise<string> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/credits/checkout`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/credits/checkout`, {
     method: "POST",
     headers: { ...(await authHeader()), "Content-Type": "application/json" },
     body: JSON.stringify({ packId }),
