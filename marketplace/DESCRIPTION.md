@@ -9,7 +9,7 @@ Vibi Separate is a UXP panel for video editors. Drop in any clip, split its audi
 ## Key features
 
 - **Pick your audio, anywhere** — Load a local **File**, or pull a clip straight from the **Project** panel or the **Timeline**. Waveform preview confirms the source before you run.
-- **One-click separation** — Upload and let the AI split a single track into per-speaker stems (Speaker 1, Speaker 2, …) plus **Background**. Each separation costs 1 credit.
+- **One-click separation** — Upload and let the AI split a single track into per-speaker stems (Speaker 1, Speaker 2, …) plus **Background**. Costs roughly 1 credit per minute of audio (minimum 1 credit).
 - **Stem mixer** — Toggle each stem on/off and ride its level with a per-stem dB slider. Keep only the voices you want, mute the rest, then **Mix selected**.
 - **Check script** — The result comes with a timecoded transcript so you can see exactly which speaker said what, and when.
 - **Edit & reassign speakers** — Rename speakers (e.g. *Speaker 1 → 주휘리*), add speakers, and tap any line's speaker tag to reassign it to someone else.
@@ -21,7 +21,7 @@ Vibi Separate is a UXP panel for video editors. Drop in any clip, split its audi
 
 ## Requirements
 
-- Adobe Premiere Pro **25.6.0** or later
+- Adobe Premiere Pro **26.0.0** or later
 - Internet connection (audio is processed in the cloud)
 - A Vibi account with available credits
 

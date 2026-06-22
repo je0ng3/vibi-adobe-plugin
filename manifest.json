@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "ai.perso.vibi.separate",
   "name": "Vibi Separate",
-  "version": "0.1.23",
+  "version": "1.0.0",
   "main": "index.html",
   "featureFlags": {
     "enableSWCSupport": true
