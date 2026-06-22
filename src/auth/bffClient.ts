@@ -1,5 +1,5 @@
 import { BFF_BASE_URL } from "../config";
-import { readJson } from "../jobs/http";
+import { fetchWithTimeout, readJson } from "../jobs/http";
 
 export interface DeviceStartResponse {
   deviceCode: string;
@@ -23,13 +23,13 @@ export type DevicePollResult =
   | { status: "authorized"; accessToken: string; expiresAt: number; user: DeviceUser };
 
 export async function deviceStart(): Promise<DeviceStartResponse> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/auth/device/start`, { method: "POST" });
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/auth/device/start`, { method: "POST" });
   if (!res.ok) throw new Error(`device/start failed: ${res.status}`);
   return readJson<DeviceStartResponse>(res, "device/start");
 }
 
 export async function devicePoll(deviceCode: string): Promise<DevicePollResult> {
-  const res = await fetch(`${BFF_BASE_URL}/api/v2/auth/device/poll`, {
+  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/auth/device/poll`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ deviceCode }),

@@ -18,11 +18,20 @@ const IS_PROD = process.env.NODE_ENV === "production";
 // Fail fast on insecure production config rather than silently running wide-open. A single
 // mis-set env var must not (a) leave CORS reflecting every origin or (b) expose the
 // no-verification dev auth bypass.
+// Minimum JWT_SECRET length in production. Access tokens are HMAC-signed (HS256) and stateless
+// (no server-side revocation), so a weak/guessable secret lets an attacker forge a token for ANY
+// user — full account + credit takeover. Refuse to boot prod on a short secret.
+const MIN_JWT_SECRET_LEN = 32;
+
 function assertProdConfig(originAllowlist: string[]): void {
   if (!IS_PROD) return;
   const problems: string[] = [];
   if (originAllowlist.length === 0) problems.push("ALLOWED_ORIGINS is empty");
   if (process.env.AUTH_DEV_BYPASS === "true") problems.push("AUTH_DEV_BYPASS is enabled");
+  const secret = process.env.JWT_SECRET ?? "";
+  if (secret.length < MIN_JWT_SECRET_LEN) {
+    problems.push(`JWT_SECRET is missing or shorter than ${MIN_JWT_SECRET_LEN} characters`);
+  }
   if (problems.length > 0) {
     throw new Error(`refusing to start in production: ${problems.join("; ")}`);
   }
@@ -56,6 +65,15 @@ app.use(
 // NAT IP — see those route files.
 app.use("/api/v2/auth/device/start", rateLimit({ windowMs: 60_000, max: 20 }));
 app.use("/api/v2/auth/device/poll", rateLimit({ windowMs: 60_000, max: 60 }));
+// The browser OAuth endpoints are unauthenticated too: limit them so the Google token-exchange /
+// id_token-verification work (and the state-verify on the callback) can't be hammered.
+app.use("/api/v2/auth/google/start", rateLimit({ windowMs: 60_000, max: 20 }));
+app.use("/api/v2/auth/google/callback", rateLimit({ windowMs: 60_000, max: 20 }));
+// Signature verification is the real gate on the webhook (cheap HMAC over a small body, rejects
+// forgeries). Paddle delivers ALL customers' events from a small fixed IP range, so an IP-keyed
+// limit collapses every customer onto one counter — set it well above any legitimate burst/retry
+// volume so it only ever trips on a single-source flood, never on real credit-granting events.
+app.use("/api/v2/paddle/webhook", rateLimit({ windowMs: 60_000, max: 600 }));
 
 app.route("/", healthRoute);
 app.route("/", authRoute);

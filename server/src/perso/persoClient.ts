@@ -16,6 +16,26 @@ async function checkResponse(res: Response): Promise<void> {
   }
 }
 
+// Per-request deadline for Perso calls. Without it a hung connection (Perso stall, dropped TCP)
+// keeps a separation's concurrency slot occupied forever — the job is stuck "processing" and the
+// gate never frees, so subsequent jobs pile up and the box can wedge. Control calls are quick;
+// blob upload / tar download move up to MAX_AUDIO_BYTES so they get a longer budget.
+const CONTROL_TIMEOUT_MS = 30_000;
+const TRANSFER_TIMEOUT_MS = 10 * 60_000;
+
+async function persoFetch(url: string, init: RequestInit, timeoutMs = CONTROL_TIMEOUT_MS): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    // A timeout/abort surfaces as a 5xx-class PersoApiError so withTransientRetry retries it (it
+    // only treats 4xx as fatal), and so a non-retried caller fails the job cleanly + refunds.
+    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new PersoApiError(504, `perso request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw e;
+  }
+}
+
 async function withTransientRetry<T>(label: string, block: () => Promise<T>): Promise<T> {
   const MAX_ATTEMPTS = 3;
   let lastErr: unknown;
@@ -51,7 +71,7 @@ function unwrapResult<T>(body: unknown): T {
 export async function getSasToken(fileName: string): Promise<PersoSasTokenResponse> {
   return withTransientRetry(`getSasToken(${fileName})`, async () => {
     const encoded = encodeURIComponent(fileName);
-    const res = await fetch(`${PERSO_API_BASE}/file/api/upload/sas-token?fileName=${encoded}`, {
+    const res = await persoFetch(`${PERSO_API_BASE}/file/api/upload/sas-token?fileName=${encoded}`, {
       method: "GET",
       headers: authHeaders(),
     });
@@ -61,18 +81,22 @@ export async function getSasToken(fileName: string): Promise<PersoSasTokenRespon
 }
 
 export async function uploadToBlob(sasUrl: string, audio: ArrayBuffer): Promise<void> {
-  const res = await fetch(sasUrl, {
-    method: "PUT",
-    headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": "application/octet-stream" },
-    body: audio,
-  });
+  const res = await persoFetch(
+    sasUrl,
+    {
+      method: "PUT",
+      headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": "application/octet-stream" },
+      body: audio,
+    },
+    TRANSFER_TIMEOUT_MS,
+  );
   await checkResponse(res);
 }
 
 export async function registerAudio(sasUrl: string, fileName: string): Promise<PersoMediaRegistration> {
   const fileUrl = sasUrl.split("?")[0];
   return withTransientRetry(`registerAudio(${fileName})`, async () => {
-    const res = await fetch(`${PERSO_API_BASE}/file/api/upload/audio`, {
+    const res = await persoFetch(`${PERSO_API_BASE}/file/api/upload/audio`, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ spaceSeq: persoSpaceSeq(), fileUrl, fileName }),
@@ -90,7 +114,7 @@ export async function uploadAudio(audio: ArrayBuffer, fileName: string): Promise
 
 export async function submitStt(mediaSeq: number, title?: string): Promise<number> {
   return withTransientRetry(`submitStt(${mediaSeq})`, async () => {
-    const res = await fetch(
+    const res = await persoFetch(
       `${PERSO_API_BASE}/video-translator/api/v1/projects/spaces/${persoSpaceSeq()}/stt`,
       {
         method: "POST",
@@ -108,7 +132,7 @@ export async function submitStt(mediaSeq: number, title?: string): Promise<numbe
 
 export async function getProgress(projectSeq: number): Promise<PersoProgress> {
   return withTransientRetry(`getProgress(${projectSeq})`, async () => {
-    const res = await fetch(
+    const res = await persoFetch(
       `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/space/${persoSpaceSeq()}/progress`,
       { method: "GET", headers: authHeaders() },
     );
@@ -121,7 +145,7 @@ export async function getSttScript(projectSeq: number, cursorId?: number): Promi
   return withTransientRetry(`getSttScript(${projectSeq},${cursorId ?? "start"})`, async () => {
     const base = `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}/stt/script`;
     const url = cursorId != null ? `${base}?cursorId=${cursorId}` : base;
-    const res = await fetch(url, { method: "GET", headers: authHeaders() });
+    const res = await persoFetch(url, { method: "GET", headers: authHeaders() });
     await checkResponse(res);
     return unwrapResult<PersoScriptPage>(await res.json());
   });
@@ -129,7 +153,7 @@ export async function getSttScript(projectSeq: number, cursorId?: number): Promi
 
 export async function submitAudioSeparation(mediaSeq: number, title?: string): Promise<number> {
   return withTransientRetry(`submitAudioSeparation(${mediaSeq})`, async () => {
-    const res = await fetch(
+    const res = await persoFetch(
       `${PERSO_API_BASE}/video-translator/api/v1/projects/spaces/${persoSpaceSeq()}/audio-separation`,
       {
         method: "POST",
@@ -147,7 +171,7 @@ export async function submitAudioSeparation(mediaSeq: number, title?: string): P
 
 export async function getProjectInfo(projectSeq: number): Promise<PersoProjectInfo> {
   return withTransientRetry(`getProjectInfo(${projectSeq})`, async () => {
-    const res = await fetch(
+    const res = await persoFetch(
       `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}`,
       { method: "GET", headers: authHeaders() },
     );
@@ -164,7 +188,7 @@ export async function getSeparationDownloadLinks(
   target: "originalVoiceSpeakers" | "originalSubBackground",
 ): Promise<PersoSeparationDownloadLinks> {
   return withTransientRetry(`getSeparationDownloadLinks(${projectSeq},${target})`, async () => {
-    const res = await fetch(
+    const res = await persoFetch(
       `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}/download?target=${target}`,
       { method: "GET", headers: authHeaders() },
     );
@@ -175,10 +199,14 @@ export async function getSeparationDownloadLinks(
 
 export async function streamDownload(downloadUrl: string): Promise<ArrayBuffer> {
   const { url, needsAuth } = resolveDownloadUrl(downloadUrl);
-  const res = await fetch(url, {
-    method: "GET",
-    headers: needsAuth ? authHeaders() : undefined,
-  });
+  const res = await persoFetch(
+    url,
+    {
+      method: "GET",
+      headers: needsAuth ? authHeaders() : undefined,
+    },
+    TRANSFER_TIMEOUT_MS,
+  );
   await checkResponse(res);
   return res.arrayBuffer();
 }
@@ -203,7 +231,7 @@ export async function getAudioSeparationScript(projectSeq: number, cursorId?: nu
   return withTransientRetry(`getAudioSeparationScript(${projectSeq},${cursorId ?? "start"})`, async () => {
     const base = `${PERSO_API_BASE}/video-translator/api/v1/projects/${projectSeq}/spaces/${persoSpaceSeq()}/audio-separation/script`;
     const url = cursorId != null ? `${base}?cursorId=${cursorId}` : base;
-    const res = await fetch(url, { method: "GET", headers: authHeaders() });
+    const res = await persoFetch(url, { method: "GET", headers: authHeaders() });
     await checkResponse(res);
     return unwrapResult<PersoScriptPage>(await res.json());
   });

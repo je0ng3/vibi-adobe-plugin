@@ -15,13 +15,21 @@ export interface PeaksResult {
   durationSec: number;
 }
 
+// Decode an already-on-disk audio file to peaks. Preferred entry point: the caller streams the
+// upload straight to a temp file (see routes/peaks.ts) so the whole input never sits in RAM.
+export async function computePeaksFromPath(inputPath: string, barCount = 200): Promise<PeaksResult> {
+  const pcm = await ffmpegDecode(inputPath);
+  return reducePeaks(pcm, barCount);
+}
+
+// Convenience wrapper for callers that already hold the bytes in memory. Writes them to a temp
+// file (Buffer.from(ArrayBuffer) is a view — no copy) and delegates to computePeaksFromPath.
 export async function computePeaks(bytes: ArrayBuffer, ext: string, barCount = 200): Promise<PeaksResult> {
   const dir = await mkdtemp(join(tmpdir(), "vibi-peaks-"));
   const input = join(dir, `in.${ext || "bin"}`);
   try {
     await writeFile(input, Buffer.from(bytes));
-    const pcm = await ffmpegDecode(input);
-    return reducePeaks(pcm, barCount);
+    return computePeaksFromPath(input, barCount);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
