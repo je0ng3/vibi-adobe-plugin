@@ -15,14 +15,20 @@ LOGO = "marketplace/listing-icon-96.png"
 
 SHOTS = [
     {
-        "src": os.path.expanduser("~/Desktop/04_음원분리결과.png"),
-        "out": "marketplace/screenshot-1-stems.png",
+        "src": os.path.expanduser("~/Desktop/raw-overview.png"),
+        "out": "marketplace/screenshot-1-overview.png",
+        "title": "Separate audio without\nleaving Premiere",
+        "subtitle": "Load a clip from your timeline, project, or a local file — then split it into clean per-speaker stems with one click.",
+    },
+    {
+        "src": os.path.expanduser("~/Desktop/raw-stems.png"),
+        "out": "marketplace/screenshot-2-stems.png",
         "title": "Split any clip into\nper-speaker stems",
         "subtitle": "Toggle each voice, ride its level, and mix only what you want — then send a clean track straight back to Premiere.",
     },
     {
-        "src": os.path.expanduser("~/Desktop/05_대본확인.png"),
-        "out": "marketplace/screenshot-2-script.png",
+        "src": os.path.expanduser("~/Desktop/raw-script.png"),
+        "out": "marketplace/screenshot-3-script.png",
         "title": "Check the script,\nfix who-said-what",
         "subtitle": "A timecoded transcript with speaker editing and one-tap reassign, then rebuild the audio to match.",
     },
