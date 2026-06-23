@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Waveform } from "./Waveform";
 import type { StemView } from "./StemListView";
 import { play, stop, pause, resume, setVolume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
@@ -26,10 +26,21 @@ export function StemCard({
 }: Props) {
   const [currentTime, setCurrentTime] = useState(0);
   const [paused, setPaused] = useState(false);
+  // True iff this card was ALREADY active at mount — leftover playback intent from a remount (card
+  // collapsed→expanded, project closed→reopened), not a fresh user click. Auto-starting then is the
+  // "previously-played stem replays on reopen" bug, so we clear the stale flag instead of playing.
+  // A genuine click mounts the card inactive, so this stays false for real playback.
+  const staleActiveOnMount = useRef(isActive);
 
   // Drive playback off isActive (FileCard guarantees only one card is active at a time).
   useEffect(() => {
-    if (!isActive || !audioUrl) return;
+    if (!isActive) return;
+    if (staleActiveOnMount.current) {
+      staleActiveOnMount.current = false;
+      onRequestActive(false); // drop the leftover active state instead of auto-replaying
+      return;
+    }
+    if (!audioUrl) return;
     let raf = 0;
     setPaused(false);
     // UXP audio is fragile (hidden-<video> path can throw MediaError); if play rejects, drop back
