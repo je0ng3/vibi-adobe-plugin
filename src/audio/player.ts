@@ -27,6 +27,8 @@ interface HostBackend {
     opts?: { volume?: number; onEnded?: () => void; durationSec?: number },
   ) => Promise<number>;
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
   setVolume: (volume: number) => void;
   getCurrentTime: () => number;
   seek: (ratio: number) => void;
@@ -106,6 +108,7 @@ let startedAtCtxTime = 0; // ctx.currentTime when the current source started
 let startedAtOffset = 0; // seconds into the buffer where it started
 let currentDuration = 0;
 let endedCb: (() => void) | null = null;
+let pausedOffset: number | null = null; // web 경로: pause 시 보존한 재생 위치(초). resume 의 시작점.
 
 export function playingId(): string | null {
   const b = hostBackend();
@@ -136,6 +139,7 @@ export function stop(): void {
   currentId = null;
   currentUrl = null;
   endedCb = null;
+  pausedOffset = null;
 }
 
 function startSource(c: AudioContext, buffer: AudioBuffer, offsetSec: number) {
@@ -189,6 +193,7 @@ export async function play(
   currentId = id;
   currentUrl = url;
   endedCb = opts?.onEnded ?? null;
+  pausedOffset = null;
   startSource(c, buffer, 0);
   return buffer.duration;
 }
@@ -207,8 +212,36 @@ export function getCurrentTime(): number {
   const b = hostBackend();
   if (b) return b.getCurrentTime();
   const c = getCtx();
-  if (!c || !source) return 0;
+  if (!c || !source) return pausedOffset ?? 0; // paused(소스 없음)면 멈춘 위치 유지
   return Math.min(currentDuration, startedAtOffset + (c.currentTime - startedAtCtxTime));
+}
+
+// Pause/resume: 정지(stop)와 달리 위치를 보존해 이어서 재생. Premiere(video/sourceMonitor 백엔드)는
+// 네이티브로, web(AudioContext)는 현재 offset 을 기억했다가 그 지점에서 재시작.
+export function pause(): void {
+  const b = hostBackend();
+  if (b) {
+    b.pause();
+    return;
+  }
+  const c = getCtx();
+  if (!c || !source) return;
+  pausedOffset = Math.min(currentDuration, startedAtOffset + (c.currentTime - startedAtCtxTime));
+  teardownSource();
+}
+
+export async function resume(): Promise<void> {
+  const b = hostBackend();
+  if (b) {
+    b.resume();
+    return;
+  }
+  const c = getCtx();
+  if (!c || currentUrl == null || pausedOffset == null) return;
+  const buffer = bufferCache.get(currentUrl);
+  if (!buffer) return;
+  startSource(c, buffer, pausedOffset);
+  pausedOffset = null;
 }
 
 // Jump to a position (0..1) within the currently playing clip.

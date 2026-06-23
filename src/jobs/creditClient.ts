@@ -17,29 +17,9 @@ export async function getBalance(): Promise<number> {
   return data.balance;
 }
 
-export interface CreditPack {
-  id: string;
-  credits: number;
-  priceCents: number;
-  label: string;
-}
-
-export async function getPacks(): Promise<{ packs: CreditPack[]; currency: string }> {
-  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/credits/packs`, { headers: await authHeader() });
-  if (!res.ok) throw new Error(`packs failed: ${check401(res.status)}`);
-  return readJson<{ packs: CreditPack[]; currency: string }>(res, "packs");
-}
-
-export async function createCheckout(packId: string): Promise<string> {
-  const res = await fetchWithTimeout(`${BFF_BASE_URL}/api/v2/credits/checkout`, {
-    method: "POST",
-    headers: { ...(await authHeader()), "Content-Type": "application/json" },
-    body: JSON.stringify({ packId }),
-  });
-  if (!res.ok) throw new Error(`checkout failed: ${check401(res.status)}`);
-  const data = await readJson<{ url: string }>(res, "checkout");
-  return data.url;
-}
+// NOTE: 플러그인에는 자체 결제(Paddle)를 두지 않는다. 크레딧 충전은 vibi 모바일 앱(IAP)에서 하고,
+// 같은 계정으로 로그인하면 공유 DB 의 동일 잔액을 여기서 그대로 소비한다(getBalance 가 그 잔액).
+// 따라서 packs/checkout 호출은 제거했다(BFF 도 플러그인용 결제 엔드포인트를 서빙하지 않음).
 
 export async function throwIfInsufficient(res: Response): Promise<void> {
   if (res.status !== 402) return;

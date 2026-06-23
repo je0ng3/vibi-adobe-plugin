@@ -4,7 +4,7 @@
 // an accumulating line into a fixed overlay box on the panel, so the flow is visible without any
 // devtools. Gated on __VIBI_DIAG__ (set only in dev/UDT/diag builds — see vite.config.ts); in a
 // normal prod build the painting is inert. Build with:
-//   VIBI_DIAG=true VIBI_BFF_BASE_URL=https://plugin-api.vibi.fm npm run build
+//   VIBI_DIAG=true VIBI_BFF_BASE_URL=https://api.vibi.fm npm run build
 declare const __VIBI_DIAG__: boolean | undefined;
 
 function diagOn(): boolean {

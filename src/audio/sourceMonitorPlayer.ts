@@ -183,6 +183,19 @@ export function stop(): void {
   void halt();
 }
 
+// Pause: speed 0 holds the playhead (clip stays open) so resume() continues. closeClip 은 안 함.
+export function pause(): void {
+  if (currentId == null) return;
+  stopPoll();
+  void sm?.play?.(0.0);
+}
+
+export function resume(): void {
+  if (!sm || currentId == null) return;
+  void sm.play(1.0);
+  schedulePoll();
+}
+
 // Source Monitor plays the file as-is; per-stem gain isn't available on this path.
 export function setVolume(_volume: number): void {
   /* no-op — see module header */

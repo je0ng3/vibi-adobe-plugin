@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Waveform } from "./Waveform";
 import type { StemView } from "./StemListView";
-import { play, stop, setVolume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
+import { play, stop, pause, resume, setVolume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
 import { formatClock } from "../audio/format";
 
@@ -25,11 +25,13 @@ export function StemCard({
   onToggleSelected,
 }: Props) {
   const [currentTime, setCurrentTime] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   // Drive playback off isActive (FileCard guarantees only one card is active at a time).
   useEffect(() => {
     if (!isActive || !audioUrl) return;
     let raf = 0;
+    setPaused(false);
     // UXP audio is fragile (hidden-<video> path can throw MediaError); if play rejects, drop back
     // out of the active state so the button doesn't stay stuck showing "playing" with no sound.
     play(stem.id, audioUrl, {
@@ -38,6 +40,7 @@ export function StemCard({
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);
+        setPaused(false);
       },
     }).catch((e) => {
       console.warn("[play] stem playback failed:", e);
@@ -72,11 +75,19 @@ export function StemCard({
   // clip in the OS default player. <div role="button"> not <button> — UXP buttons render as gray pills.
   function preview() {
     if (!audioUrl) return;
-    if (canPlay) {
-      onRequestActive(!isActive);
+    if (!canPlay) {
+      previewInDefaultApp(audioUrl, `${stem.label}.wav`).catch((e) => console.warn("[preview]", e));
       return;
     }
-    previewInDefaultApp(audioUrl, `${stem.label}.wav`).catch((e) => console.warn("[preview]", e));
+    if (!isActive) {
+      onRequestActive(true); // 처음부터 재생
+    } else if (paused) {
+      resume(); // 멈춘 위치에서 이어서
+      setPaused(false);
+    } else {
+      pause(); // 위치 보존하며 일시정지
+      setPaused(true);
+    }
   }
 
   return (
@@ -87,10 +98,10 @@ export function StemCard({
             className="stem-play"
             role="button"
             tabIndex={0}
-            aria-label={canPlay && isActive ? `Pause ${stem.label}` : `Preview ${stem.label}`}
+            aria-label={canPlay && isActive && !paused ? `Pause ${stem.label}` : `Play ${stem.label}`}
             onClick={preview}
           >
-            {canPlay && isActive ? "❚❚" : "▶"}
+            {canPlay && isActive && !paused ? "❚❚" : "▶"}
           </div>
         )}
         <span className="stem-card-label">{stem.label}</span>

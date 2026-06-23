@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Waveform } from "./Waveform";
-import { play, stop, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
+import { play, stop, pause, resume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
 import { formatClock, formatMb } from "../audio/format";
 
@@ -39,10 +39,12 @@ export function MixOutputView({
 }: Props) {
   const audioUrl = result.audioUrl;
   const [currentTime, setCurrentTime] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     if (!isActive || !audioUrl) return;
     let raf = 0;
+    setPaused(false);
     // UXP audio is fragile; if play rejects, drop out of the active state instead of leaving the
     // button stuck on "playing" with no sound (and no unhandled rejection).
     play(result.id, audioUrl, {
@@ -50,6 +52,7 @@ export function MixOutputView({
       onEnded: () => {
         onRequestActive(false);
         setCurrentTime(0);
+        setPaused(false);
       },
     }).catch((e) => {
       console.warn("[play] mix playback failed:", e);
@@ -79,12 +82,20 @@ export function MixOutputView({
   // Browser: toggle in-panel playback. UXP (no audio output): open the mix in the OS default player.
   function preview() {
     if (!audioUrl) return;
-    if (canPlay) {
-      onRequestActive(!isActive);
+    if (!canPlay) {
+      // `result.name` is the base name; the ".wav" is managed here and at import (see FileCard).
+      previewInDefaultApp(audioUrl, `${result.name || "mix"}.wav`).catch((e) => console.warn("[preview]", e));
       return;
     }
-    // `result.name` is the base name; the ".wav" is managed here and at import (see FileCard).
-    previewInDefaultApp(audioUrl, `${result.name || "mix"}.wav`).catch((e) => console.warn("[preview]", e));
+    if (!isActive) {
+      onRequestActive(true);
+    } else if (paused) {
+      resume();
+      setPaused(false);
+    } else {
+      pause();
+      setPaused(true);
+    }
   }
 
   return (
@@ -95,10 +106,10 @@ export function MixOutputView({
             className="stem-play"
             role="button"
             tabIndex={0}
-            aria-label={canPlay && isActive ? "Pause mix" : "Preview mix"}
+            aria-label={canPlay && isActive && !paused ? "Pause mix" : "Play mix"}
             onClick={preview}
           >
-            {canPlay && isActive ? "❚❚" : "▶"}
+            {canPlay && isActive && !paused ? "❚❚" : "▶"}
           </div>
         )}
         <span className="mix-output-badge">MIX</span>
