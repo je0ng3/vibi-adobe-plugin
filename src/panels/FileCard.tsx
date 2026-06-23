@@ -628,6 +628,12 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
               Buy credits
             </sp-button>
           )}
+          {/* 원본 바이트가 있는(복원이 아닌) 카드만 재분리 가능 — 실패한 분리를 같은 입력으로 재시도. */}
+          {entry.source && (
+            <sp-button variant={stage.buyable ? "secondary" : "accent"} size="s" onClick={onGenerate}>
+              Retry
+            </sp-button>
+          )}
         </div>
       )}
     </div>

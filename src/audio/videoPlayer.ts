@@ -230,6 +230,21 @@ export function stop(): void {
   resetState();
 }
 
+// Pause keeps the playhead + clip loaded so resume() continues from the same spot (unlike stop()
+// which resets). currentId/currentTime/onended 보존.
+export function pause(): void {
+  try {
+    el?.pause();
+  } catch {
+    /* ignore */
+  }
+}
+
+export function resume(): void {
+  if (!el || currentId == null) return;
+  void el.play().catch((e) => console.warn("[videoPlayer] resume failed:", e));
+}
+
 export function setVolume(volume: number): void {
   currentVolume = volume;
   if (el) el.volume = Math.max(0, Math.min(1, volume / 100));

@@ -15,7 +15,7 @@ import { resolve } from "node:path";
 
 // The one production backend. Used when VIBI_BFF_BASE_URL is unset so a bare `npm run
 // package:release` always produces a shippable build; override the env var to target another.
-const DEFAULT_BASE = "https://plugin-api.vibi.fm";
+const DEFAULT_BASE = "https://api.vibi.fm";
 
 const root = resolve(import.meta.dirname, "..");
 const fail = (msg) => {

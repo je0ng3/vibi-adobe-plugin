@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { shell } from "uxp";
 import { pickAudiosFromOs, SUPPORTED_EXTS, type LoadedAudioSource } from "../input/audioPicker";
 import { readSelectedAudioClips, getActiveProjectKey } from "../host/premiere";
 import { listSeparations } from "../jobs/separationClient";
@@ -70,8 +69,8 @@ export function SeparationPanel({ onSignOut }: Props) {
     };
   }, []);
 
-  // After the user heads to Paddle in the browser, poll the balance for a couple of
-  // minutes so the top-up shows up automatically once the webhook credits the account.
+  // 사용자가 vibi 모바일 앱에서 충전하고 돌아온 뒤, 잔액이 자동 반영되도록 몇 분간 폴링한다.
+  // 공유 DB 라 앱에서의 충전이 곧 이 잔액(getBalance)에 반영된다.
   function pollBalanceAfterCheckout() {
     if (pollRef.current) clearInterval(pollRef.current);
     const baseline = balance; // balance before the top-up; stop as soon as it rises.
@@ -182,16 +181,11 @@ export function SeparationPanel({ onSignOut }: Props) {
         </div>
       </header>
 
-      {BILLING_ENABLED && buyOpen && (
+      {buyOpen && (
         <BuyCreditsModal
-          onClose={() => setBuyOpen(false)}
-          onCheckout={async (url) => {
-            try {
-              await shell.openExternal(url);
-            } catch (e) {
-              console.warn("[buy] openExternal failed:", e);
-            }
+          onClose={() => {
             setBuyOpen(false);
+            // 사용자가 모바일 앱에서 충전하고 돌아오면 잔액이 자동 반영되도록 잠시 폴링.
             pollBalanceAfterCheckout();
           }}
         />

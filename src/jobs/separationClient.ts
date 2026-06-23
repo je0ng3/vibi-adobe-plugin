@@ -37,9 +37,17 @@ async function startSeparation(
   durationMs: number,
   projectId: string | null,
 ): Promise<string> {
+  // BFF 계약: 파일 필드 "file" + "spec" JSON(SeparationSpec). projectId/fileName/byteLength 는
+  // history 카드 메타로 spec 에 실어 보낸다(모바일은 omit). durationMs 는 BFF 가 업로드 파일을
+  // ffprobe 로 직접 측정하므로 보내지 않는다(클라 추정보다 정확).
+  const spec = JSON.stringify({
+    projectId: projectId ?? null,
+    fileName,
+    byteLength: bytes.byteLength,
+  });
   const { body, contentType } = buildMultipart(
-    { durationMs: String(durationMs), projectId: projectId ?? "" },
-    [{ field: "audio", fileName, bytes }],
+    { spec },
+    [{ field: "file", fileName, bytes }],
   );
   console.log("[separate] POST", {
     url: `${BFF_BASE_URL}/api/v2/separate`,
@@ -77,7 +85,11 @@ async function pollSeparation(jobId: string): Promise<SeparationStatus> {
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`separation poll failed: ${check401(res.status)}`);
-  return readJson<SeparationStatus>(res, "separation poll");
+  const data = await readJson<SeparationStatus>(res, "separation poll");
+  // BFF 는 status 를 대문자(QUEUED/PROCESSING/READY/FAILED)로 보낸다. 이 클라는 소문자
+  // (queued/processing/ready/failed)를 기대하므로 정규화 — 안 하면 "READY" 를 "ready" 로
+  // 못 봐 100%에서 멈춘다(모바일은 대문자 그대로 처리하므로 BFF 는 안 바꿈).
+  return { ...data, status: String(data.status ?? "").toLowerCase() as SeparationStatus["status"] };
 }
 
 export async function fetchStem(jobId: string, stemId: string): Promise<ArrayBuffer> {
@@ -153,9 +165,11 @@ export async function runSeparation(
       diag(`poll #${i}: ${st.status} ${st.progress}% stems=${st.stems?.length ?? 0}`);
     }
     if (st.status === "ready") {
-      diag(`ready: fetching ${st.stems.length} stem(s)`);
+      // voice_all("모든 화자" 합본)은 패널에서 불필요 — 개별 화자(speaker_*)와 배경음(background)만 가져온다.
+      const wanted = st.stems.filter((m) => m.stemId !== "voice_all");
+      diag(`ready: fetching ${wanted.length} stem(s) (voice_all 제외)`);
       const stems = await Promise.all(
-        st.stems.map(async (m) => {
+        wanted.map(async (m) => {
           const b = await fetchStem(jobId, m.stemId);
           diag(`stem ${m.stemId}: ${(b.byteLength / 1024).toFixed(0)}KB`);
           return { stemId: m.stemId, label: m.label, bytes: b };
@@ -207,7 +221,8 @@ export async function listSeparations(projectId: string | null): Promise<SavedSe
     durationSec: (s.durationMs ?? 0) / 1000,
     createdAt: s.createdAt,
     hasScript: s.hasScript,
-    stems: s.stems ?? [],
+    // voice_all("모든 화자" 합본)은 패널에서 불필요 — 개별 화자 + 배경음만. (runSeparation 과 동일 필터)
+    stems: (s.stems ?? []).filter((m) => m.stemId !== "voice_all"),
   }));
 }
 
