@@ -1,7 +1,7 @@
 {
   "manifestVersion": 5,
   "id": "b3d5d5b5",
-  "name": "Vibi Separate",
+  "name": "Vibi: AI Sound Eraser",
   "version": "1.0.0",
   "main": "index.html",
   "featureFlags": {
@@ -15,7 +15,7 @@
     {
       "type": "panel",
       "id": "vibi.separate.panel",
-      "label": { "default": "Vibi Separate" },
+      "label": { "default": "Vibi: AI Sound Eraser" },
       "minimumSize": { "width": 320, "height": 480 },
       "preferredDockedSize": { "width": 360, "height": 600 }
     }

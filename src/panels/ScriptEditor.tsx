@@ -210,7 +210,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
       {/* Lines: edit text directly; Enter mid-line splits, Backspace at the start merges up; tap the
           time to fine-tune the split, tap the colored tag to reassign the speaker. */}
       <p className="seg-hint">
-        대사를 눌러 바로 수정 · 중간에서 Enter로 분리 · 맨 앞에서 ⌫로 이전 줄에 합치기 · 시간을 눌러 미세조정
+        Tap a line to edit · Enter mid-line to split · ⌫ at the start to merge up · tap the time to fine-tune
       </p>
       <ul className="seg-list">
         {draft.segments.map((seg) => (
@@ -258,7 +258,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                   inputRefs.current[seg.id] = el;
                 }}
                 value={seg.text}
-                placeholder="빈 줄 — 대사를 입력하세요"
+                placeholder="Empty line — type a caption"
                 onChange={(e) => setSegmentText(seg, e.currentTarget.value)}
                 onKeyDown={(e) => onTextKeyDown(e, seg)}
               />

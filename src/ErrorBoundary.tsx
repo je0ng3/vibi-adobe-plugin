@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div style={{ padding: 16, color: "#ddd", font: "13px sans-serif" }}>
         <p style={{ fontWeight: 600, marginBottom: 8 }}>Something went wrong</p>
-        <p>The panel hit an unexpected error. Please close and reopen the Vibi Separate panel.</p>
+        <p>The panel hit an unexpected error. Please close and reopen the Vibi: AI Sound Eraser panel.</p>
         {diagOn() && (
           <pre style={{ color: "#f88", whiteSpace: "pre-wrap", font: "11px monospace", marginTop: 8 }}>
             {`${error.message}\n${error.stack ?? ""}`}

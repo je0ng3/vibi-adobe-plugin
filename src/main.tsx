@@ -28,7 +28,7 @@ try {
   const el = document.createElement("pre");
   el.textContent = diagOn
     ? "BOOT ERROR: " + msg
-    : "Vibi Separate couldn't start. Please close and reopen the panel.";
+    : "Vibi: AI Sound Eraser couldn't start. Please close and reopen the panel.";
   el.style.cssText = diagOn
     ? "color:#f88;background:#300;padding:8px;font:11px monospace;white-space:pre-wrap"
     : "color:#ddd;padding:12px;font:13px sans-serif;white-space:pre-wrap";
