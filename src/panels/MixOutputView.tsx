@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Waveform } from "./Waveform";
 import { play, stop, pause, resume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
@@ -40,9 +40,17 @@ export function MixOutputView({
   const audioUrl = result.audioUrl;
   const [currentTime, setCurrentTime] = useState(0);
   const [paused, setPaused] = useState(false);
+  // See StemCard: don't auto-replay if this mounts already-active (leftover intent from a remount).
+  const staleActiveOnMount = useRef(isActive);
 
   useEffect(() => {
-    if (!isActive || !audioUrl) return;
+    if (!isActive) return;
+    if (staleActiveOnMount.current) {
+      staleActiveOnMount.current = false;
+      onRequestActive(false);
+      return;
+    }
+    if (!audioUrl) return;
     let raf = 0;
     setPaused(false);
     // UXP audio is fragile; if play rejects, drop out of the active state instead of leaving the
