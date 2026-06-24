@@ -20,6 +20,9 @@ type ImportTarget = "project" | "timeline";
 
 interface Props {
   result: MixResult;
+  // Unique per card (entry.id) — namespaces the global playback id so a mix doesn't collide with
+  // another card's mix on the single shared backend.
+  cardKey: string;
   isActive: boolean;
   onRequestActive: (active: boolean) => void;
   onDiscard: () => void;
@@ -30,6 +33,7 @@ interface Props {
 
 export function MixOutputView({
   result,
+  cardKey,
   isActive,
   onRequestActive,
   onDiscard,
@@ -42,6 +46,8 @@ export function MixOutputView({
   const [paused, setPaused] = useState(false);
   // See StemCard: don't auto-replay if this mounts already-active (leftover intent from a remount).
   const staleActiveOnMount = useRef(isActive);
+  const playKey = `${cardKey}:mix`;
+  const ownedRef = useRef(false);
 
   useEffect(() => {
     if (!isActive) return;
@@ -53,9 +59,10 @@ export function MixOutputView({
     if (!audioUrl) return;
     let raf = 0;
     setPaused(false);
+    ownedRef.current = false;
     // UXP audio is fragile; if play rejects, drop out of the active state instead of leaving the
     // button stuck on "playing" with no sound (and no unhandled rejection).
-    play(result.id, audioUrl, {
+    play(playKey, audioUrl, {
       durationSec: result.durationSec,
       onEnded: () => {
         onRequestActive(false);
@@ -67,20 +74,28 @@ export function MixOutputView({
       onRequestActive(false);
     });
     const tick = () => {
-      if (playingId() === result.id) setCurrentTime(getCurrentTime());
+      const pid = playingId();
+      if (pid === playKey) {
+        ownedRef.current = true;
+        setCurrentTime(getCurrentTime());
+      } else if (ownedRef.current) {
+        // Another card/stem took over the single shared backend — stop pretending we're playing.
+        onRequestActive(false);
+        return;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      if (playingId() === result.id) stop();
+      if (playingId() === playKey) stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
   function seekRatio(ratio: number) {
     if (!result.durationSec) return;
-    if (isActive && playingId() === result.id) seek(ratio);
+    if (isActive && playingId() === playKey) seek(ratio);
     setCurrentTime(ratio * result.durationSec);
   }
 

@@ -12,6 +12,8 @@ export interface StemView {
 
 interface Props {
   stems: StemView[];
+  // Unique per card (entry.id); StemCard namespaces the global playback id with it.
+  cardKey: string;
   activeId: string | null;
   onRequestActive: (id: string, active: boolean) => void;
   onVolumeChange: (id: string, volume: number) => void;
@@ -20,6 +22,7 @@ interface Props {
 
 export function StemListView({
   stems,
+  cardKey,
   activeId,
   onRequestActive,
   onVolumeChange,
@@ -31,6 +34,7 @@ export function StemListView({
         <StemCard
           key={stem.id}
           stem={stem}
+          cardKey={cardKey}
           audioUrl={stem.audioUrl}
           isActive={activeId === stem.id}
           onRequestActive={(active) => onRequestActive(stem.id, active)}

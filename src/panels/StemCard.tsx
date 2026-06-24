@@ -7,6 +7,10 @@ import { formatClock } from "../audio/format";
 
 interface Props {
   stem: StemView;
+  // Globally-unique per card (entry.id). The playback backend is a single global singleton keyed by
+  // the play id, but stem ids ("vocals"/"background"/…) repeat across cards — so the id we hand the
+  // backend must be namespaced by the card, or one file's stem plays/steals another's.
+  cardKey: string;
   audioUrl: string | null;
   isActive: boolean;
   onRequestActive: (active: boolean) => void;
@@ -18,6 +22,7 @@ const canPlay = playbackSupported();
 
 export function StemCard({
   stem,
+  cardKey,
   audioUrl,
   isActive,
   onRequestActive,
@@ -31,8 +36,14 @@ export function StemCard({
   // "previously-played stem replays on reopen" bug, so we clear the stale flag instead of playing.
   // A genuine click mounts the card inactive, so this stays false for real playback.
   const staleActiveOnMount = useRef(isActive);
+  // The id the shared backend knows this clip by — unique across every card+stem.
+  const playKey = `${cardKey}:${stem.id}`;
+  // Whether this card has actually owned the shared backend at least once this activation. Lets the
+  // tick distinguish "not playing yet (still loading)" from "another card took the backend from us".
+  const ownedRef = useRef(false);
 
-  // Drive playback off isActive (FileCard guarantees only one card is active at a time).
+  // Drive playback off isActive. Only one stem per card is active; across cards the single shared
+  // backend can play only one clip, so if another card starts, the tick below deactivates us.
   useEffect(() => {
     if (!isActive) return;
     if (staleActiveOnMount.current) {
@@ -43,9 +54,10 @@ export function StemCard({
     if (!audioUrl) return;
     let raf = 0;
     setPaused(false);
+    ownedRef.current = false;
     // UXP audio is fragile (hidden-<video> path can throw MediaError); if play rejects, drop back
     // out of the active state so the button doesn't stay stuck showing "playing" with no sound.
-    play(stem.id, audioUrl, {
+    play(playKey, audioUrl, {
       volume: stem.volume,
       durationSec: stem.durationSec,
       onEnded: () => {
@@ -58,25 +70,34 @@ export function StemCard({
       onRequestActive(false);
     });
     const tick = () => {
-      if (playingId() === stem.id) setCurrentTime(getCurrentTime());
+      const pid = playingId();
+      if (pid === playKey) {
+        ownedRef.current = true;
+        setCurrentTime(getCurrentTime());
+      } else if (ownedRef.current) {
+        // We owned the backend but another clip (another card/stem) took it over. Drop out of active
+        // so this card's play button + progress bar stop lying about playing.
+        onRequestActive(false);
+        return;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      if (playingId() === stem.id) stop();
+      if (playingId() === playKey) stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
   // Live volume while this stem is the one playing.
   useEffect(() => {
-    if (isActive && playingId() === stem.id) setVolume(stem.volume);
-  }, [stem.volume, isActive, stem.id]);
+    if (isActive && playingId() === playKey) setVolume(stem.volume);
+  }, [stem.volume, isActive, playKey]);
 
   function seekRatio(ratio: number) {
     if (!stem.durationSec) return;
-    if (isActive && playingId() === stem.id) seek(ratio);
+    if (isActive && playingId() === playKey) seek(ratio);
     setCurrentTime(ratio * stem.durationSec);
   }
 

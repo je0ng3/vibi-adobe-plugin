@@ -61,6 +61,11 @@ let currentDuration = 0;
 let currentSec = 0;
 let endedCb: (() => void) | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+// Mirror videoPlayer's guards: open/setPosition/play are all async, so currentId isn't set until
+// late. pausedIntent lets a pause() that lands mid-load suppress the auto-start; playToken stops a
+// superseded play() from racing the single Source Monitor (double openFilePath / poll).
+let pausedIntent = false;
+let playToken = 0;
 
 export function playingId(): string | null {
   return currentId;
@@ -125,6 +130,7 @@ function resetState() {
   endedCb = null;
   currentSec = 0;
   currentDuration = 0;
+  pausedIntent = false;
 }
 
 async function halt() {
@@ -149,6 +155,7 @@ export async function play(
 ): Promise<number> {
   if (!sm || !tt) return 0;
   resetState();
+  const token = ++playToken; // claim this generation; later awaits bail if a newer play() runs
   let bytes: ArrayBuffer;
   try {
     bytes = await audioUrlToBytes(url);
@@ -156,10 +163,13 @@ export async function play(
     console.warn("[sourceMonitor] read failed:", e);
     return 0;
   }
+  if (token !== playToken) return 0; // superseded while reading
   currentDuration = opts?.durationSec && opts.durationSec > 0 ? opts.durationSec : durationOf(bytes);
   try {
     const path = await ensureTemp(id, bytes);
+    if (token !== playToken) return 0;
     await sm.openFilePath(path);
+    if (token !== playToken) return 0;
     try {
       await sm.setPosition(tt.TIME_ZERO);
     } catch {
@@ -168,11 +178,15 @@ export async function play(
     currentId = id;
     currentSec = 0;
     endedCb = opts?.onEnded ?? null;
+    // The user paused while we were loading — leave the clip open at 0 so resume() can start it,
+    // rather than auto-playing against their pause.
+    if (pausedIntent) return currentDuration;
     await sm.play(1.0);
+    if (token !== playToken) return 0;
     schedulePoll();
   } catch (e) {
     console.warn("[sourceMonitor] play failed:", e);
-    resetState();
+    if (token === playToken) resetState();
     return 0;
   }
   return currentDuration;
@@ -184,14 +198,17 @@ export function stop(): void {
 }
 
 // Pause: speed 0 holds the playhead (clip stays open) so resume() continues. closeClip 은 안 함.
+// pausedIntent is set unconditionally (even mid-load, before currentId exists) so an in-flight
+// play() sees it and skips its auto-start.
 export function pause(): void {
-  if (currentId == null) return;
+  pausedIntent = true;
   stopPoll();
-  void sm?.play?.(0.0);
+  if (currentId != null) void sm?.play?.(0.0);
 }
 
 export function resume(): void {
   if (!sm || currentId == null) return;
+  pausedIntent = false;
   void sm.play(1.0);
   schedulePoll();
 }
