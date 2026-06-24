@@ -122,7 +122,7 @@ def compose(shot, bg_cache):
     if os.path.exists(LOGO):
         chip = Image.open(LOGO).convert("RGBA").resize((44, 44), Image.LANCZOS)
         bg.paste(chip, (cx, cy), chip)
-        draw.text((cx + 56, cy + 8), "Vibi Separate", font=font(26, bold=True), fill=(255, 255, 255))
+        draw.text((cx + 56, cy + 8), "Vibi: AI Sound Eraser", font=font(26, bold=True), fill=(255, 255, 255))
     cursor = cy + 80
 
     # title (may contain \n)
