@@ -60,6 +60,15 @@ let currentId: string | null = null;
 let currentDuration = 0;
 let endedCb: (() => void) | null = null;
 let currentVolume = 100;
+// play() is async (reads bytes, writes a temp file, probes load schemes — up to several seconds).
+// Two guards keep that window from corrupting pause/resume:
+//   pausedIntent — the user hit pause while we were still loading (or right as v.play() started),
+//     so el.play() may reject with AbortError. Treat that as "stay loaded, paused" rather than a
+//     failure: do NOT tear down state, so resume() still has a clip to continue.
+//   playToken    — bumped on every play(); a stale (superseded) play() must not clobber the newer
+//     one's currentId/onended when its awaits finally resolve.
+let pausedIntent = false;
+let playToken = 0;
 
 // Temp file per clip id, written once and reused so re-play just re-points the element.
 const tempPaths = new Map<string, string>();
@@ -147,6 +156,8 @@ export async function play(
 ): Promise<number> {
   if (!supported()) return 0;
   const v = getEl();
+  const token = ++playToken; // claim this generation; every await below bails if a newer play() runs
+  pausedIntent = false; // synchronous reset: a pause() must only count if it lands *after* this point
   detach();
 
   let bytes: ArrayBuffer;
@@ -156,6 +167,7 @@ export async function play(
     console.warn("[videoPlayer] read failed:", e);
     return 0;
   }
+  if (token !== playToken) return 0; // superseded while reading
 
   currentVolume = opts?.volume ?? 100;
   currentId = id;
@@ -176,9 +188,10 @@ export async function play(
     tempPath = await ensureTemp(id, bytes);
   } catch (e) {
     console.warn("[videoPlayer] temp write failed:", e);
-    resetState();
+    if (token === playToken) resetState();
     return 0;
   }
+  if (token !== playToken) return 0;
 
   // Load a source the element can actually fetch. UXP's createObjectURL yields a fake blob: handle
   // the <video> rejects (MediaError 4), so we use the temp file's `file://` path, falling back to
@@ -190,7 +203,9 @@ export async function play(
       loaded = true;
       break;
     }
+    if (token !== playToken) return 0; // superseded mid-load
   }
+  if (token !== playToken) return 0;
   if (!loaded) {
     console.warn("[videoPlayer] no source scheme loaded");
     resetState();
@@ -199,12 +214,18 @@ export async function play(
 
   try {
     v.currentTime = 0;
+    // The user paused while we were still loading — stay loaded at 0 so resume() can start it,
+    // rather than playing against their wishes.
+    if (pausedIntent) return currentDuration;
     await v.play();
   } catch (e) {
+    if (token !== playToken) return 0; // a newer play() superseded us mid-start
+    if (pausedIntent) return currentDuration; // our own pause() aborted play() — keep the clip loaded
     console.warn("[videoPlayer] play failed:", e);
     resetState();
     return 0;
   }
+  if (token !== playToken) return 0;
   if (Number.isFinite(v.duration) && v.duration > 0) currentDuration = v.duration;
   return currentDuration;
 }
@@ -223,6 +244,7 @@ function resetState() {
   currentId = null;
   endedCb = null;
   currentDuration = 0;
+  pausedIntent = false;
 }
 
 export function stop(): void {
@@ -231,8 +253,10 @@ export function stop(): void {
 }
 
 // Pause keeps the playhead + clip loaded so resume() continues from the same spot (unlike stop()
-// which resets). currentId/currentTime/onended 보존.
+// which resets). currentId/currentTime/onended 보존. pausedIntent flags an in-flight play() so it
+// doesn't auto-start (or doesn't tear down on the AbortError its own el.pause() triggers).
 export function pause(): void {
+  pausedIntent = true;
   try {
     el?.pause();
   } catch {
@@ -242,6 +266,7 @@ export function pause(): void {
 
 export function resume(): void {
   if (!el || currentId == null) return;
+  pausedIntent = false;
   void el.play().catch((e) => console.warn("[videoPlayer] resume failed:", e));
 }
 

@@ -473,6 +473,23 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
     setActiveId(active ? id : (prev) => (prev === id ? null : prev));
   }
 
+  // Collapsing unmounts the stem/mix views (their cleanup stops playback), but activeId would
+  // otherwise persist — so re-expanding remounts an "active" card and auto-replays from 0. Clear it
+  // on collapse so reopening a file is silent, not a fresh playback. Also clear if the card leaves
+  // the "done" view (re-separate / error) so a stale id can't point at a stem that no longer exists.
+  function toggleCollapsed() {
+    if (!collapsed) setActiveId(null); // currently expanded → about to collapse
+    setCollapsed((c) => !c);
+  }
+  useEffect(() => {
+    if (stage.kind !== "done") setActiveId(null);
+  }, [stage.kind]);
+
+  // Each card namespaces the shared playback backend by its unique entry id; stem ids alone repeat
+  // across cards (every file has a "vocals"/"background"), which is what made one file's preview
+  // play — or its progress bar advance — for another. See StemCard/MixOutputView.
+  const cardKey = entry.id;
+
   // Remove the card from the panel, and — if it corresponds to a saved separation — permanently
   // delete that record server-side so it doesn't reappear on the next sign-in. A fresh card that
   // never finished separating has no jobId, so there's nothing to delete.
@@ -491,7 +508,7 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
           className="file-card-toggle"
           aria-label={collapsed ? "Expand" : "Collapse"}
           type="button"
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={toggleCollapsed}
         >
           {collapsed ? "▶" : "▼"}
         </button>
@@ -589,6 +606,7 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
           {stage.mix && (
             <MixOutputView
               result={stage.mix}
+              cardKey={cardKey}
               isActive={activeId === MIX_ID}
               onRequestActive={(active) => requestActive(MIX_ID, active)}
               onDiscard={discardMix}
@@ -612,6 +630,7 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
           )}
           <StemListView
             stems={stage.stems}
+            cardKey={cardKey}
             activeId={activeId}
             onRequestActive={requestActive}
             onVolumeChange={(id, volume) => updateStem(id, { volume })}
