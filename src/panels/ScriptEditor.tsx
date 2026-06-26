@@ -49,6 +49,8 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
   // Which line's start time is being edited, and the typed value. Local UI state.
   const [editTimeId, setEditTimeId] = useState<string | null>(null);
   const [timeInput, setTimeInput] = useState("");
+  // Which line's speaker picker is open (tap the tag → list of speakers → choose).
+  const [pickerSegId, setPickerSegId] = useState<string | null>(null);
 
   // After a split/merge we want the caret to land in the right line at the join point. We keep refs
   // to each line's text input and apply the focus once the draft has re-rendered.
@@ -88,11 +90,12 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
     });
   }
 
-  // Tap a line's speaker tag → assign the next speaker (wraps). Direct, no hidden dropdown.
-  function cycleSegmentSpeaker(seg: TranscriptSegment) {
-    const order = draft.speakers.map((sp) => sp.index);
-    const next = order[(order.indexOf(seg.speakerIndex) + 1) % order.length];
-    onChange({ ...draft, segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, speakerIndex: next } : s)) });
+  // Tap a line's speaker tag to open a list of speakers, then pick one to reassign that line.
+  function assignSpeaker(seg: TranscriptSegment, speakerIndex: number) {
+    if (speakerIndex !== seg.speakerIndex) {
+      onChange({ ...draft, segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, speakerIndex } : s)) });
+    }
+    setPickerSegId(null);
   }
 
   function setSegmentText(seg: TranscriptSegment, text: string) {
@@ -246,8 +249,16 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 role="button"
                 tabIndex={0}
                 style={{ background: colorFor(seg.speakerIndex) }}
-                title="Tap to reassign"
-                onClick={() => cycleSegmentSpeaker(seg)}
+                aria-haspopup="listbox"
+                aria-expanded={pickerSegId === seg.id}
+                title="Tap to choose speaker"
+                onClick={() => setPickerSegId((cur) => (cur === seg.id ? null : seg.id))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPickerSegId((cur) => (cur === seg.id ? null : seg.id));
+                  }
+                }}
               >
                 {labelFor(seg.speakerIndex)}
               </div>
@@ -263,6 +274,30 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 onKeyDown={(e) => onTextKeyDown(e, seg)}
               />
             </div>
+            {pickerSegId === seg.id && (
+              <div className="seg-spk-menu" role="listbox" aria-label="Choose speaker">
+                {draft.speakers.map((sp) => (
+                  <div
+                    key={sp.index}
+                    className="seg-spk-option"
+                    role="option"
+                    aria-selected={sp.index === seg.speakerIndex}
+                    tabIndex={0}
+                    onClick={() => assignSpeaker(seg, sp.index)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        assignSpeaker(seg, sp.index);
+                      }
+                    }}
+                  >
+                    <span className="seg-spk-dot" style={{ background: colorFor(sp.index) }} aria-hidden />
+                    <span className="seg-spk-label">{sp.label || `화자 ${sp.index}`}</span>
+                    {sp.index === seg.speakerIndex && <span className="seg-spk-check" aria-hidden>✓</span>}
+                  </div>
+                ))}
+              </div>
+            )}
           </li>
         ))}
       </ul>

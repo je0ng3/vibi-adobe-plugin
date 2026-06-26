@@ -43,6 +43,10 @@ specific backend with `VIBI_BFF_BASE_URL=https://… npm run …` (default `api.
 - **Rendering** — no CSS Grid, `sp-icon` / SVG paths don't render, and **one unsupported CSS
   value drops the whole rule** (falls back to a rounded default button). Use
   `<div role="button">`; `sp-button` renders as a grey pill.
+- **Flexbox `gap` is unreliable** — observed collapsing to zero between flex items (so the
+  spacing just disappears). Don't rely on it for spacing that matters; use margins instead
+  (`> * + * { margin… }` or per-child). CSS gradients and single-side dashed borders also
+  don't render.
 - **Manifest network domains** gate requests and are **cached** — adding/changing a domain
   needs a **Premiere restart** to take effect (a panel reload won't clear it).
 - **Mixing is WAV-PCM only** — the pure-JS mixer (`src/audio/mixer.ts`) can't decode FLAC, so

@@ -65,9 +65,17 @@ export interface FileEntry {
   restored?: SavedSeparation;
 }
 
+// "row" = compact selectable row in the main list; "detail" = the opened tab (full body);
+// "hidden" = a different file's tab is open. Hidden cards stay MOUNTED (render null) so their
+// in-flight separation and already-loaded stems survive navigating between files.
+export type CardView = "row" | "detail" | "hidden";
+
 interface Props {
   entry: FileEntry;
   projectKey: string | null;
+  view: CardView;
+  onOpen: () => void;
+  onBack: () => void;
   onRemove: () => void;
   onCreditChange?: () => void;
   onBuyCredits?: () => void;
@@ -83,7 +91,7 @@ type Stage =
 
 const MIX_ID = "mix";
 
-export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCredits }: Props) {
+export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, onCreditChange, onBuyCredits }: Props) {
   // File identity comes from the live source when added fresh, or from saved metadata when this
   // card was rehydrated from history (no source bytes).
   const meta = entry.source
@@ -94,9 +102,10 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
         byteLength: entry.restored?.byteLength ?? 0,
       };
   const [stage, setStage] = useState<Stage>(entry.restored ? { kind: "restoring" } : { kind: "prepping" });
-  // Restored history cards start collapsed: their stem bytes load from disk lazily on first
-  // expand, so signing in with many saved separations doesn't pull every stem into memory at once.
-  const [collapsed, setCollapsed] = useState(!!entry.restored);
+  // Expanded only when this card is the open tab. Restored history cards still load their stems
+  // lazily — gated on this — so opening the panel with many saved separations doesn't pull every
+  // stem into memory; each one's stems fetch on first open.
+  const collapsed = view !== "detail";
   const [mixBusy, setMixBusy] = useState(false);
   const [mixError, setMixError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState<ImportTarget | null>(null);
@@ -473,14 +482,13 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
     setActiveId(active ? id : (prev) => (prev === id ? null : prev));
   }
 
-  // Collapsing unmounts the stem/mix views (their cleanup stops playback), but activeId would
-  // otherwise persist — so re-expanding remounts an "active" card and auto-replays from 0. Clear it
-  // on collapse so reopening a file is silent, not a fresh playback. Also clear if the card leaves
-  // the "done" view (re-separate / error) so a stale id can't point at a stem that no longer exists.
-  function toggleCollapsed() {
-    if (!collapsed) setActiveId(null); // currently expanded → about to collapse
-    setCollapsed((c) => !c);
-  }
+  // Leaving the open tab unmounts the stem/mix views (their cleanup stops playback), but activeId
+  // would otherwise persist — so reopening would remount an "active" card and auto-replay from 0.
+  // Clear it whenever this card isn't the open tab so reopening is silent. Also clear if the card
+  // leaves the "done" view (re-separate / error) so a stale id can't point at a removed stem.
+  useEffect(() => {
+    if (view !== "detail") setActiveId(null);
+  }, [view]);
   useEffect(() => {
     if (stage.kind !== "done") setActiveId(null);
   }, [stage.kind]);
@@ -501,31 +509,97 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
 
   const sizeMb = formatMb(meta.byteLength);
 
+  // One-glance status for the compact list row, so the user can pick without opening each tab.
+  const rowStatus =
+    prepFailed ? "Unreadable"
+    : stage.kind === "restoring" ? "Saved"
+    : stage.kind === "prepping" ? "Ready to separate"
+    : stage.kind === "generating" ? `Separating…${stage.progress > 0 ? ` ${Math.round(stage.progress)}%` : ""}`
+    : stage.kind === "done" ? "Separated"
+    : "Error";
+
+  // A different file's tab is open: render nothing, but stay mounted so this card's in-flight
+  // job and loaded stems survive.
+  if (view === "hidden") return null;
+
+  const deleteAction = (className: string, label: string) => (
+    <div
+      className={className}
+      role="button"
+      tabIndex={0}
+      aria-label="Delete file"
+      onClick={handleRemove}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleRemove();
+        }
+      }}
+    >
+      {label}
+    </div>
+  );
+
   return (
-    <div className={`file-card${collapsed ? " file-card--collapsed" : ""}`}>
-      <div className="file-card-header">
-        <button
-          className="file-card-toggle"
-          aria-label={collapsed ? "Expand" : "Collapse"}
-          type="button"
-          onClick={toggleCollapsed}
-        >
-          {collapsed ? "▶" : "▼"}
-        </button>
-        <div className="file-card-info">
-          <p className="file-card-name">{meta.fileName}</p>
-          <p className="file-card-meta">{meta.ext.toUpperCase()} · {sizeMb} MB</p>
-        </div>
-        <div className="file-card-actions">
-          <button
-            className="file-card-remove"
-            aria-label="Remove file"
-            type="button"
-            onClick={handleRemove}
+    <div className={`file-card file-card--${view}`}>
+      {view === "detail" && (
+        <div className="file-card-detail-top">
+          <div
+            className="file-card-back"
+            role="button"
+            tabIndex={0}
+            onClick={onBack}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onBack();
+              }
+            }}
           >
-            ×
-          </button>
+            <span className="file-card-back-arrow" aria-hidden="true">
+              ‹
+            </span>
+            All files
+          </div>
+          {deleteAction("file-card-delete", "Delete")}
         </div>
+      )}
+      <div className="file-card-header">
+        {view === "row" ? (
+          <>
+            <div
+              className="file-card-open"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${meta.fileName} — ${rowStatus}`}
+              onClick={onOpen}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen();
+                }
+              }}
+            >
+              <div className="file-card-info">
+                <p className="file-card-name">{meta.fileName}</p>
+                <p className="file-card-meta">
+                  {rowStatus} · {meta.ext.toUpperCase()} · {sizeMb} MB
+                </p>
+              </div>
+              <span className="file-card-chevron" aria-hidden="true">
+                ›
+              </span>
+            </div>
+            <div className="file-card-actions">{deleteAction("file-card-remove", "✕")}</div>
+          </>
+        ) : (
+          <div className="file-card-info">
+            <p className="file-card-name">{meta.fileName}</p>
+            {durationSec > 0 && (
+              <p className="file-card-meta">{formatClock(durationSec, { padMinutes: true })}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {!collapsed && stage.kind === "prepping" && prepFailed && (
@@ -579,8 +653,6 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
 
       {!collapsed && stage.kind === "done" && (
         <div className="file-card-body">
-          <DoneSummary durationSec={durationSec} />
-
           <div
             className="script-toggle"
             role="button"
@@ -659,21 +731,6 @@ export function FileCard({ entry, projectKey, onRemove, onCreditChange, onBuyCre
   );
 }
 
-interface DoneSummaryProps {
-  durationSec: number;
-}
-
-function DoneSummary({ durationSec }: DoneSummaryProps) {
-  return (
-    <div className="done-summary">
-      <div className="done-summary-info">
-        <p className="done-summary-jobs">Stem separation</p>
-        <p className="done-summary-meta">{formatClock(durationSec, { padMinutes: true })}</p>
-      </div>
-    </div>
-  );
-}
-
 interface MixControlsProps {
   selectedCount: number;
   busy: boolean;
@@ -688,6 +745,7 @@ function MixControls({ selectedCount, busy, onMix }: MixControlsProps) {
       </span>
       <sp-button
         variant="accent"
+        size="s"
         disabled={selectedCount === 0 || busy || undefined}
         pending={busy || undefined}
         onClick={onMix}

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { pickAudiosFromOs, SUPPORTED_EXTS, type LoadedAudioSource } from "../input/audioPicker";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { SUPPORTED_EXTS, type LoadedAudioSource } from "../input/audioPicker";
 import { readSelectedAudioClips, getActiveProjectKey } from "../host/premiere";
 import { listSeparations } from "../jobs/separationClient";
 import { ProjectBrowser } from "./ProjectBrowser";
-import { FileCard, type FileEntry } from "./FileCard";
+import { FileCard, type FileEntry, type CardView } from "./FileCard";
 import { getBalance } from "../jobs/creditClient";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { BrandLockup } from "../brand/Logo";
@@ -15,6 +15,8 @@ interface Props {
 
 export function SeparationPanel({ onSignOut }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
+  // True while the panel rehydrates this project's saved separations on mount.
+  const [restoring, setRestoring] = useState(true);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   // Transient progress while a video clip's audio is extracted via Adobe Media Encoder.
@@ -22,6 +24,8 @@ export function SeparationPanel({ onSignOut }: Props) {
   const [balance, setBalance] = useState<number | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  // Master-detail: id of the file whose tab is open, or null = the main list.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -46,10 +50,10 @@ export function SeparationPanel({ onSignOut }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const key = await getActiveProjectKey();
-      if (cancelled) return;
-      setProjectKey(key);
       try {
+        const key = await getActiveProjectKey();
+        if (cancelled) return;
+        setProjectKey(key);
         const saved = await listSeparations(key);
         if (cancelled || saved.length === 0) return;
         // entry id = jobId so a restored card maps 1:1 to its server record.
@@ -62,12 +66,21 @@ export function SeparationPanel({ onSignOut }: Props) {
         });
       } catch (e) {
         console.warn("[history] load failed:", e);
+      } finally {
+        // Clear the "restoring…" message whether we restored cards, found none, or errored.
+        if (!cancelled) setRestoring(false);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Opening a file's tab clears any stale list-level pick error so it doesn't reappear when you
+  // navigate back.
+  useEffect(() => {
+    if (selectedId != null) setPickError(null);
+  }, [selectedId]);
 
   // 사용자가 vibi 모바일 앱에서 충전하고 돌아온 뒤, 잔액이 자동 반영되도록 몇 분간 폴링한다.
   // 공유 DB 라 앱에서의 충전이 곧 이 잔액(getBalance)에 반영된다.
@@ -92,21 +105,6 @@ export function SeparationPanel({ onSignOut }: Props) {
       }
       if (ticks >= 40) stop(); // give up after ~2 min.
     }, 3000);
-  }
-
-  async function onAddFiles() {
-    setPickError(null);
-    setPickerBusy(true);
-    try {
-      const sources = await pickAudiosFromOs({ onStatus: setPickStatus });
-      if (sources.length === 0) return;
-      addEntries(sources);
-    } catch (e) {
-      setPickError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPickerBusy(false);
-      setPickStatus(null);
-    }
   }
 
   async function onAddFromPremiere() {
@@ -154,32 +152,45 @@ export function SeparationPanel({ onSignOut }: Props) {
       source,
     }));
     setEntries((prev) => [...prev, ...newEntries]);
+    // Adding a single file (a timeline clip or one project item) jumps straight into its tab so the
+    // user can Separate it right away, instead of landing on the list with an extra click.
+    if (newEntries.length === 1) setSelectedId(newEntries[0].id);
   }
 
   function removeEntry(id: string) {
     // The card (FileCard.handleRemove) deletes the saved separation server-side; here we just
     // drop it from the panel list.
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    // If the open tab was removed, fall back to the main list.
+    setSelectedId((cur) => (cur === id ? null : cur));
   }
+
+  // Only treat a selection as "open" if it still points at a live entry — a stale selectedId can
+  // then never strand the panel on a blank detail view.
+  const openId = selectedId != null && entries.some((e) => e.id === selectedId) ? selectedId : null;
 
   return (
     <div className="panel">
-      <header className="panel-header">
-        <BrandLockup size={22} />
-        <div className="panel-header-right">
-          {balance != null &&
-            (BILLING_ENABLED ? (
-              <button className="credit-badge credit-badge--button" type="button" onClick={() => setBuyOpen(true)}>
-                {balance} credits +
-              </button>
-            ) : (
-              <span className="credit-badge">{balance} credits</span>
-            ))}
-          <sp-button variant="secondary" treatment="outline" size="s" onClick={onSignOut}>
-            Sign out
-          </sp-button>
-        </div>
-      </header>
+      {/* Brand header (logo + credits + Logout) is main-list chrome — hidden while viewing a
+          file's tab, where the back button + file content stand on their own. */}
+      {openId == null && (
+        <header className="panel-header">
+          <BrandLockup size={22} />
+          <div className="panel-header-right">
+            {balance != null &&
+              (BILLING_ENABLED ? (
+                <button className="credit-badge credit-badge--button" type="button" onClick={() => setBuyOpen(true)}>
+                  {balance} credits +
+                </button>
+              ) : (
+                <span className="credit-badge">{balance} credits</span>
+              ))}
+            <sp-button variant="secondary" treatment="outline" size="s" onClick={onSignOut}>
+              Logout
+            </sp-button>
+          </div>
+        </header>
+      )}
 
       {buyOpen && (
         <BuyCreditsModal
@@ -191,12 +202,13 @@ export function SeparationPanel({ onSignOut }: Props) {
         />
       )}
 
-      <SourcePicker
-        loading={pickerBusy}
-        onPickFile={onAddFiles}
-        onPickTimeline={onAddFromPremiere}
-        onPickProject={() => setBrowseOpen(true)}
-      />
+      {openId == null && (
+        <SourcePicker
+          loading={pickerBusy}
+          onPickTimeline={onAddFromPremiere}
+          onPickProject={() => setBrowseOpen(true)}
+        />
+      )}
 
       {browseOpen && (
         <ProjectBrowser
@@ -205,21 +217,35 @@ export function SeparationPanel({ onSignOut }: Props) {
         />
       )}
 
-      {pickStatus && <p className="panel-status">{pickStatus}</p>}
-      {pickError && <p className="panel-error">{pickError}</p>}
+      {openId == null && restoring && (
+        <p className="panel-status">Restoring your previous work…</p>
+      )}
+      {openId == null && pickStatus && <p className="panel-status">{pickStatus}</p>}
+      {openId == null && pickError && <p className="panel-error">{pickError}</p>}
+
+      {openId == null && entries.length > 0 && (
+        <h2 className="file-list-title">Your files</h2>
+      )}
 
       <ul className="file-cards">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <FileCard
-              entry={entry}
-              projectKey={projectKey}
-              onRemove={() => removeEntry(entry.id)}
-              onCreditChange={refreshBalance}
-              onBuyCredits={BILLING_ENABLED ? () => setBuyOpen(true) : undefined}
-            />
-          </li>
-        ))}
+        {entries.map((entry) => {
+          const view: CardView =
+            openId == null ? "row" : entry.id === openId ? "detail" : "hidden";
+          return (
+            <li key={entry.id} className={view === "hidden" ? "file-card-hidden" : undefined}>
+              <FileCard
+                entry={entry}
+                projectKey={projectKey}
+                view={view}
+                onOpen={() => setSelectedId(entry.id)}
+                onBack={() => setSelectedId(null)}
+                onRemove={() => removeEntry(entry.id)}
+                onCreditChange={refreshBalance}
+                onBuyCredits={BILLING_ENABLED ? () => setBuyOpen(true) : undefined}
+              />
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -227,32 +253,59 @@ export function SeparationPanel({ onSignOut }: Props) {
 
 interface SourcePickerProps {
   loading: boolean;
-  onPickFile: () => void;
   onPickTimeline: () => void;
   onPickProject: () => void;
 }
 
-// Three ways to bring audio into the panel as one divided control: File fills the tall left cell,
-// Project (top) and Timeline (bottom) split the right. The whole cell is the click target.
-// No OS drag-and-drop: UXP panels don't receive dropped files, so every source is a click.
-function SourcePicker({ loading, onPickFile, onPickTimeline, onPickProject }: SourcePickerProps) {
-  // Plain <div>, not <button>: UXP's native <button> has built-in rounded-gray chrome that CSS
-  // background/border-radius can't override, so the cells looked like gray pills. A div has no
-  // default chrome and styles cleanly. role/tabIndex keep it operable.
-  const cell = (cls: string, onClick: () => void) => ({
-    className: `source-cell ${cls}${loading ? " source-cell--disabled" : ""}`,
+// Tiny rect-only icons — UXP renders <rect>, not SVG <path> or sp-icon. Project = a list of
+// items; Timeline = a track with the selected clip highlighted.
+function ProjectIcon() {
+  return (
+    <svg className="source-cell-icon" width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
+      <rect x="2" y="3" width="11" height="2.2" rx="1.1" fill="#e4e4e4" />
+      <rect x="2" y="6.4" width="11" height="2.2" rx="1.1" fill="#e4e4e4" />
+      <rect x="2" y="9.8" width="11" height="2.2" rx="1.1" fill="#e4e4e4" />
+    </svg>
+  );
+}
+
+function TimelineIcon() {
+  return (
+    <svg className="source-cell-icon" width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
+      <rect x="1.5" y="6.4" width="12" height="2.2" rx="1.1" fill="#e4e4e4" opacity="0.45" />
+      <rect x="5" y="3.4" width="4.6" height="8.2" rx="1.2" fill="#e4e4e4" />
+    </svg>
+  );
+}
+
+// Two buttons to bring audio into the panel: Project (pick a bin item) and Timeline (read the
+// current selection). No OS drag-and-drop — UXP panels don't receive dropped files.
+function SourcePicker({ loading, onPickTimeline, onPickProject }: SourcePickerProps) {
+  // Plain <div role="button">, not <button>: UXP's native <button> paints rounded-gray chrome
+  // that CSS can't override. role/tabIndex/onKeyDown keep each div operable like a real button.
+  const cell = (onClick: () => void) => ({
+    className: `source-cell${loading ? " source-cell--disabled" : ""}`,
     role: "button",
     tabIndex: loading ? -1 : 0,
     onClick: loading ? undefined : onClick,
+    onKeyDown: loading
+      ? undefined
+      : (e: ReactKeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        },
   });
   return (
-    <div className="source-bar" role="group" aria-label="Add audio from">
-      <div {...cell("source-cell--file", onPickFile)}>File</div>
-      <div className="source-divider source-divider--v" aria-hidden />
-      <div className="source-col">
-        <div {...cell("source-cell--project", onPickProject)}>Project</div>
-        <div className="source-divider source-divider--h" aria-hidden />
-        <div {...cell("source-cell--timeline", onPickTimeline)}>Timeline</div>
+    <div className="source-bar" role="group" aria-label="Add audio to separate">
+      <div {...cell(onPickProject)}>
+        <ProjectIcon />
+        Browse project items
+      </div>
+      <div {...cell(onPickTimeline)}>
+        <TimelineIcon />
+        Load selected timeline clip
       </div>
     </div>
   );

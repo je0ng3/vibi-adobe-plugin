@@ -16,7 +16,7 @@ export function BuyCreditsModal({ onClose }: Props) {
         </div>
         <p className="modal-sub">Credits are used to separate audio (1 credit ≈ 1 minute).</p>
         <p className="modal-sub">
-          Top up in the <b>vibi mobile app</b>. Sign in with the same account and your credits are
+          Top up in the <b>Vibi mobile app</b>. Sign in with the same account and your credits are
           available here too.
         </p>
         <p className="modal-foot">Your balance refreshes here shortly after you top up.</p>
