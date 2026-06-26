@@ -45,7 +45,7 @@ export function BrandLockup({ size = 24 }: LockupProps) {
   return (
     <div className="brand-lockup">
       <BrandMark size={size} />
-      <span className="brand-wordmark">vibi</span>
+      <span className="brand-wordmark">Vibi</span>
     </div>
   );
 }

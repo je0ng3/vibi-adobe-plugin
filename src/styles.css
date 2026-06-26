@@ -43,7 +43,6 @@ button {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   padding: 14px;
 }
 
@@ -56,7 +55,6 @@ button {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .muted {
@@ -68,23 +66,22 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   padding-bottom: 6px;
 }
 
 .panel-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .brand-wordmark {
+  /* explicit margin, not flex `gap`, so the icon↔wordmark space renders reliably in UXP */
+  margin-left: 12px;
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -96,7 +93,6 @@ button {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 4px;
   padding: 0 0 6px;
   /* Float the brand in the region above the pinned action: this margin-top:auto pairs with
      .login-bottom's margin-top:auto, so the free vertical space is split equally between them.
@@ -107,21 +103,22 @@ button {
 }
 
 .login-title {
-  margin: 8px 0 0;
+  /* mark↔title spacing (no flex `gap` in UXP) */
+  margin: 12px 0 0;
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .login-tagline {
-  margin: 0;
+  /* title↔tagline spacing */
+  margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.45;
   color: #a0a0a0;
 }
 
 .login-panel {
-  gap: 14px;
   /* Fill the panel so the bottom group can be pushed to the lower edge. .panel adds 14px
      padding, so include it in the height via border-box. */
   min-height: 100%;
@@ -133,7 +130,6 @@ button {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   /* Cap + centre on wide docks so the CTA doesn't stretch into a full-width bar. */
   width: 100%;
   max-width: 340px;
@@ -145,7 +141,6 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
   /* Reserve the tallest state's height so the floated brand mark doesn't jump when the action
      area swaps between idle (1 button) and waiting (progress bar + 2 buttons). */
   min-height: 150px;
@@ -332,7 +327,6 @@ button {
 .pack-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .pack-row {
@@ -380,55 +374,56 @@ button {
    IMPORTANT: solid borders only and no exotic properties — UXP's CSS parser drops an entire rule if
    it contains an unsupported value (e.g. `dotted`), which made the cells fall back to the default
    round gray button. Flexbox only (UXP doesn't support CSS Grid). */
+/* UXP CSS notes (learned the hard way): single-side dashed borders (border-right/bottom vanish)
+   and CSS gradients don't render — use full-box borders and solid fills. */
+
+/* Source picker: two full-width stacked buttons to add audio. Filled + bordered + rounded so
+   they read clearly as buttons; stacked (not side-by-side) so the descriptive labels never wrap
+   on a narrow dock. */
 .source-bar {
   display: flex;
-  align-items: stretch;
-  border: 1px dashed #6a6a6a;
-  border-radius: 6px;
-  overflow: hidden;
+  flex-direction: column;
 }
 
-.source-col {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0;
-  min-width: 0;
+/* UXP doesn't support flex `gap` — space the two buttons with a margin. */
+.source-cell + .source-cell {
+  margin-top: 8px;
 }
 
 .source-cell {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 0;
-  background-color: transparent;
-  color: var(--spectrum-global-color-gray-700, #d0d0d0);
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  background-color: #2c2c2c;
+  color: #e4e4e4;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .source-cell:hover {
-  background-color: var(--spectrum-global-color-gray-200, #303030);
-  color: var(--spectrum-global-color-gray-900, #ffffff);
+  background-color: #383838;
+  border-color: #5e5e5e;
 }
-.source-cell--disabled { opacity: 0.4; cursor: default; }
 
-.source-cell--file { flex: 1 1 0; }
-.source-cell--project { height: 38px; }
-.source-cell--timeline { height: 38px; }
-
-/* Dashed dividers. What works in UXP: a full-box `border: dashed` (the outer box renders fine).
-   What FAILS: single-side dashed borders (border-right/bottom vanish) and CSS gradients (didn't
-   repeat). So each divider is its own element collapsed to zero thickness with a full dashed border
-   — the box's two opposing edges land on top of each other and read as one dashed line. */
-.source-divider {
-  flex: 0 0 auto;
-  border: 1px dashed #6a6a6a;
+.source-cell--disabled {
+  opacity: 0.4;
+  cursor: default;
 }
-.source-divider--v { align-self: stretch; width: 0; }
-.source-divider--h { width: 100%; height: 0; }
+
+.source-cell-icon {
+  flex-shrink: 0;
+  margin-right: 8px;
+}
 
 /* One error-message style used everywhere (panel + modals) so every error reads the same. */
 .panel-error {
@@ -489,7 +484,6 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   max-height: 320px;
   overflow-y: auto;
 }
@@ -497,7 +491,6 @@ button {
 .proj-row {
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
   background: var(--spectrum-global-color-gray-100, #1d1d1d);
   border: 1px solid var(--spectrum-global-color-gray-300, #4b4b4b);
@@ -523,7 +516,6 @@ button {
 .proj-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -553,53 +545,142 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+}
+
+/* UXP's Chromium doesn't support flex `gap` — space the cards with a margin instead. */
+.file-cards > li + li {
+  margin-top: 12px;
+}
+
+/* Section label above the file list (only rendered when there are files). */
+.file-list-title {
+  margin: 12px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a8a8a;
 }
 
 .file-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   padding: 10px 12px;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
   background: #232323;
 }
 
+/* The open tab is the whole view — drop the card box so it reads as a page, not a boxed card. */
+.file-card--detail {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
 .file-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
-.file-card-toggle {
-  background: transparent;
-  border: none;
-  color: #a0a0a0;
+/* Compact list row: header only, no body gap. */
+.file-card--row {
+}
+
+/* The whole row (minus the × button) opens the file's tab. */
+.file-card-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
   cursor: pointer;
-  font-size: 9px;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  padding: 0;
+  background: transparent;
+  /* transparent border reserves space so the focus ring doesn't shift layout */
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.file-card-open:hover {
+  background: #2c2c2c;
+}
+
+.file-card-open:focus {
+  background: #2c2c2c;
+  border-color: #2680eb;
+}
+
+.file-card-chevron {
+  flex-shrink: 0;
+  color: #808080;
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* Back-to-list button atop an open file's tab. */
+/* Detail top bar: back link on the left, delete button on the right, same line. */
+.file-card-detail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.file-card-back {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #6db0ff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 4px 4px 0;
+  border-radius: 4px;
 }
 
-.file-card-toggle:hover:not(:disabled) { background: #3a3a3a; color: #f4f4f4; }
-.file-card-toggle:disabled { opacity: 0.35; cursor: default; }
+.file-card-back-arrow {
+  margin-right: 4px;
+  font-size: 16px;
+  line-height: 1;
+  /* nudge the glyph up to sit on the text's optical centre */
+  position: relative;
+  top: -1px;
+}
 
-.file-card--collapsed {
-  gap: 0;
+.file-card-back:hover,
+.file-card-back:focus {
+  color: #8fc4ff;
+}
+
+/* Text "Delete" on the detail top bar — muted, reddens on hover. */
+.file-card-delete {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.file-card-delete:hover,
+.file-card-delete:focus {
+  color: #ec5b62;
+}
+
+/* Non-open tabs stay mounted (state preserved) but take no layout space. */
+.file-card-hidden {
+  display: none;
 }
 
 .file-card-info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -622,35 +703,34 @@ button {
 .file-card-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
   flex-shrink: 0;
 }
 
 .file-card-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   background: transparent;
   border: none;
-  color: #a0a0a0;
-  cursor: pointer;
-  font-size: 16px;
+  color: #888;
+  font-size: 17px;
   line-height: 1;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  padding: 0;
+  cursor: pointer;
 }
 
-.file-card-remove:hover { background: #3a3a3a; color: #f4f4f4; }
+.file-card-remove:hover { color: #e4e4e4; }
 
 .file-card-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .range-selector {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .range-selector-surface {
@@ -694,7 +774,6 @@ button {
 .job-multi-select {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   padding: 8px 10px;
   background: #262626;
   border: 1px solid #3a3a3a;
@@ -704,13 +783,11 @@ button {
 .job-multi-select-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .job-multi-option {
   display: flex;
   align-items: center;
-  gap: 8px;
   font-size: 12px;
   color: #f4f4f4;
   cursor: pointer;
@@ -726,13 +803,11 @@ button {
 .job-multi-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .job-lang-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   padding: 6px 8px 6px 24px;
   border-left: 2px solid #2680eb;
   margin-left: 6px;
@@ -749,7 +824,6 @@ button {
 .job-lang-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
 }
 
 .job-lang-chip {
@@ -792,14 +866,12 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .job-progress-row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
   font-size: 12px;
   color: #f4f4f4;
 }
@@ -825,7 +897,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   padding: 8px 10px;
   background: #232a36;
   border: 1px solid #2680eb;
@@ -835,7 +906,6 @@ button {
 .script-status-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -856,7 +926,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
 }
 
 .prepping-cost {
@@ -868,40 +937,9 @@ button {
   margin-bottom: 10px;
 }
 
-.done-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  background: #262626;
-  border-radius: 5px;
-}
-
-.done-summary-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.done-summary-jobs {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #f4f4f4;
-}
-
-.done-summary-meta {
-  margin: 0;
-  font-size: 11px;
-  color: #a0a0a0;
-}
-
 .result-card {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   padding: 10px 12px;
   background: #2c2c2c;
   border: 1px solid #3a3a3a;
@@ -931,14 +969,12 @@ button {
 .result-card-downloads {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
   margin-top: 6px;
 }
 
 .dub-track {
   display: flex;
   align-items: center;
-  gap: 8px;
   margin-top: 6px;
 }
 
@@ -982,7 +1018,6 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
   padding: 12px 14px;
   border-bottom: 1px solid #3a3a3a;
   background: #262626;
@@ -991,7 +1026,6 @@ button {
 .script-modal-titles {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -1029,7 +1063,6 @@ button {
 .script-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   padding: 14px;
   overflow-y: auto;
 }
@@ -1037,7 +1070,6 @@ button {
 .script-modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
   padding: 10px 14px;
   border-top: 1px solid #3a3a3a;
   background: #262626;
@@ -1046,7 +1078,6 @@ button {
 .speaker-map {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   padding: 10px 12px;
   background: #262626;
   border-radius: 5px;
@@ -1056,7 +1087,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
 }
 
 .speaker-map-title {
@@ -1148,7 +1178,6 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .transcript-segment {
@@ -1167,7 +1196,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
 }
 
 .transcript-segment-speaker {
@@ -1209,7 +1237,6 @@ button {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .stem-card {
@@ -1218,7 +1245,6 @@ button {
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   padding: 6px 8px;
 }
 
@@ -1230,7 +1256,6 @@ button {
 .stem-card-top {
   display: flex;
   align-items: center;
-  gap: 6px;
 }
 
 .stem-play {
@@ -1338,7 +1363,6 @@ button {
 .stem-card-fader {
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 0 2px;
 }
 
@@ -1360,7 +1384,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   padding-top: 6px;
   padding-bottom: 12px;
 }
@@ -1373,7 +1396,6 @@ button {
 .mix-output {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   padding: 12px;
   border: 1px solid #2680eb;
   border-radius: 6px;
@@ -1421,7 +1443,6 @@ button {
 .mix-output-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -1619,6 +1640,30 @@ button {
   text-overflow: ellipsis;
   cursor: pointer;
 }
+/* Speaker picker: opens in-flow under the tag (the row is a column + the list scrolls, so an
+   absolute dropdown would clip). Tap the tag → choose a speaker → it assigns and closes. */
+.seg-spk-menu {
+  align-self: flex-start;
+  margin: 6px 0 2px;
+  padding: 4px;
+  min-width: 150px;
+  background: #2c2c2c;
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+}
+.seg-spk-option {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #e4e4e4;
+  cursor: pointer;
+}
+.seg-spk-option:hover { background: #383838; }
+.seg-spk-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+.seg-spk-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg-spk-check { margin-left: 8px; color: #6db0ff; }
 /* Start time doubles as the split-boundary handle — tap to fine-tune the caret-ratio estimate */
 .seg-time { display: inline-block; margin-bottom: 1px; font-size: 10px; color: var(--spectrum-global-color-gray-500, #8d8d8d); cursor: pointer; }
 .seg-time:hover { color: var(--spectrum-global-color-gray-700, #d0d0d0); }
@@ -1684,3 +1729,53 @@ button {
 .mix-output-wave .waveform {
   height: 56px;
 }
+
+/* ---- gap→margin shims: UXP doesn't render flex `gap`, so replicate each container's
+   gap with margins on non-first children. Appended last so they win same-specificity
+   ties against child `margin:0` rules. ---- */
+.panel:not(.login-panel) > * + * { margin-top: 10px; }
+.field > * + * { margin-top: 4px; }
+.panel-header > * + * { margin-left: 8px; }
+.panel-header-right > * + * { margin-left: 8px; }
+.login-bottom > * + * { margin-top: 14px; }
+.login-action > * + * { margin-top: 10px; }
+.pack-list > * + * { margin-top: 8px; }
+.proj-list > * + * { margin-top: 6px; }
+.proj-row > * + * { margin-left: 10px; }
+.proj-text > * + * { margin-top: 1px; }
+.file-card > * + * { margin-top: 10px; }
+.file-card-header > * + * { margin-left: 8px; }
+.file-card-open > * + * { margin-left: 8px; }
+.file-card-info > * + * { margin-top: 2px; }
+.file-card-actions > * + * { margin-left: 6px; }
+.file-card-body > * + * { margin-top: 8px; }
+.range-selector > * + * { margin-top: 4px; }
+.job-multi-select > * + * { margin-top: 8px; }
+.job-multi-select-list > * + * { margin-top: 4px; }
+.job-multi-option > * + * { margin-left: 8px; }
+.job-multi-row > * + * { margin-top: 6px; }
+.job-lang-row > * + * { margin-top: 4px; }
+.job-lang-chips > * + * { margin-left: 4px; }
+.job-progress-list > * + * { margin-top: 6px; }
+.job-progress-row > * + * { margin-left: 8px; }
+.script-status > * + * { margin-left: 8px; }
+.script-status-info > * + * { margin-top: 2px; }
+.prepping-actions > * + * { margin-left: 6px; }
+.result-card > * + * { margin-top: 2px; }
+.result-card-downloads > * + * { margin-left: 6px; }
+.dub-track > * + * { margin-left: 8px; }
+.script-modal-header > * + * { margin-left: 8px; }
+.script-modal-titles > * + * { margin-top: 2px; }
+.script-modal-body > * + * { margin-top: 12px; }
+.script-modal-footer > * + * { margin-left: 6px; }
+.speaker-map > * + * { margin-top: 6px; }
+.speaker-map-header > * + * { margin-left: 8px; }
+.transcript-list > * + * { margin-top: 6px; }
+.transcript-segment-meta > * + * { margin-left: 8px; }
+.stem-cards > * + * { margin-top: 6px; }
+.stem-card > * + * { margin-top: 4px; }
+.stem-card-top > * + * { margin-left: 6px; }
+.stem-card-fader > * + * { margin-left: 8px; }
+.mix-controls > * + * { margin-left: 8px; }
+.mix-output > * + * { margin-top: 10px; }
+.mix-output-info > * + * { margin-top: 2px; }

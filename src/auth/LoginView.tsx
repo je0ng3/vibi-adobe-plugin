@@ -89,7 +89,7 @@ export function LoginView({ onSignedIn, notice }: Props) {
     <div className="panel login-panel">
       <div className="login-brand">
         <BrandMark size={64} />
-        <h2 className="login-title">vibi</h2>
+        <h2 className="login-title">Vibi</h2>
         <p className="login-tagline">
           Separate any clip into clean vocals, music &amp; background — right inside Premiere.
         </p>
