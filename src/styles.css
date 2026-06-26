@@ -3,7 +3,11 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden; /* the scroll lives on sp-theme below, not the document */
-  font-family: adobe-clean, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* adobe-clean is Adobe's native UI typeface (what renders inside Premiere's UXP runtime);
+     the rest are each OS's clean system UI font as a graceful fallback. UXP can't reliably
+     load external web fonts, so we lean on these built-ins rather than @font-face. */
+  font-family: adobe-clean, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   background: #1f1f1f;
   color: #e4e4e4;
 }
@@ -60,22 +64,6 @@ button {
   font-size: 11px;
 }
 
-.user-code {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 20px;
-  letter-spacing: 0.15em;
-  font-weight: 600;
-  color: #f4f4f4;
-}
-
-.user-code-inline {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.12em;
-  font-weight: 600;
-  color: #f4f4f4;
-}
-
 .panel-header {
   display: flex;
   align-items: center;
@@ -109,44 +97,161 @@ button {
   align-items: center;
   text-align: center;
   gap: 4px;
-  padding: 12px 0 6px;
+  padding: 0 0 6px;
+  /* Float the brand in the region above the pinned action: this margin-top:auto pairs with
+     .login-bottom's margin-top:auto, so the free vertical space is split equally between them.
+     The mark lands at the vertical centre of the space above the CTA — proportional to the
+     panel height instead of a fixed px offset, so the gap stays balanced when the panel is
+     docked tall or short. */
+  margin-top: auto;
 }
 
 .login-title {
   margin: 8px 0 0;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .login-tagline {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.45;
   color: #a0a0a0;
 }
 
 .login-panel {
   gap: 14px;
+  /* Fill the panel so the bottom group can be pushed to the lower edge. .panel adds 14px
+     padding, so include it in the height via border-box. */
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
-.login-legal {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+/* Sign-in action + legal links, pinned to the bottom of the panel. */
+.login-bottom {
   margin-top: auto;
-  padding-top: 12px;
-  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Cap + centre on wide docks so the CTA doesn't stretch into a full-width bar. */
+  width: 100%;
+  max-width: 340px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.login-action {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  /* Reserve the tallest state's height so the floated brand mark doesn't jump when the action
+     area swaps between idle (1 button) and waiting (progress bar + 2 buttons). */
+  min-height: 150px;
+}
+
+/* Login CTAs are <div role="button"> + custom CSS, not <sp-button>: UXP renders sp-button as
+   an unlabeled grey pill (the slotted text doesn't paint reliably). Solid fills only — UXP
+   drops CSS gradients, so the primary uses the logo's flat blue (matches .credit-badge). */
+.login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.login-btn--primary {
+  color: #ffffff;
+  background: #2680eb;
+}
+.login-btn--primary:hover {
+  background: #378ef0;
+}
+
+.login-btn--secondary {
+  color: #e4e4e4;
+  background: transparent;
+  border-color: #5a5a5a;
+}
+.login-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #6e6e6e;
+}
+
+.login-btn--ghost {
+  min-height: 30px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #a0a0a0;
+  background: transparent;
+}
+.login-btn--ghost:hover {
+  color: #d8d8d8;
+}
+
+.login-btn--disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Conversion hook — lifted out of the muted grey help-text into a brand-tinted line. */
+.login-perk {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6db0ff;
+}
+
+/* Benign re-auth prompt ("session expired") — neutral, not alarm-red. */
+.login-notice {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #b0b0b0;
+}
+
+/* Actual sign-in failure. */
+.login-error {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #ec5b62;
+}
+
+/* Legal sits as a single centred sentence; line-height gives the inline links a taller,
+   easier-to-hit line box. */
+.login-legal {
+  text-align: center;
+  padding-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
   color: #808080;
 }
 
 .login-legal a {
   color: #a0a0a0;
   text-decoration: underline;
+  cursor: pointer;
 }
 
-/* Breathing room above the "Sign in to continue" copy (~2–3 lines). */
-.login-spacer {
-  height: 48px;
+.login-legal a:hover {
+  color: #e4e4e4;
 }
 
 .credit-badge {
