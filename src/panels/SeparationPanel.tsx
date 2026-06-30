@@ -24,6 +24,9 @@ export function SeparationPanel({ onSignOut }: Props) {
   const [balance, setBalance] = useState<number | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  // Bumped each time the project button is pressed; used as ProjectBrowser's key so re-pressing
+  // (even while it's already open) remounts it and re-fetches, instead of needing a close first.
+  const [browseNonce, setBrowseNonce] = useState(0);
   // Master-detail: id of the file whose tab is open, or null = the main list.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
@@ -206,12 +209,16 @@ export function SeparationPanel({ onSignOut }: Props) {
         <SourcePicker
           loading={pickerBusy}
           onPickTimeline={onAddFromPremiere}
-          onPickProject={() => setBrowseOpen(true)}
+          onPickProject={() => {
+            setBrowseOpen(true);
+            setBrowseNonce((n) => n + 1); // re-press reloads even when already open
+          }}
         />
       )}
 
       {browseOpen && (
         <ProjectBrowser
+          key={browseNonce}
           onClose={() => setBrowseOpen(false)}
           onImport={(sources) => addEntries(sources)}
         />

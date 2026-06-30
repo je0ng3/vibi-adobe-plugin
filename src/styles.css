@@ -137,6 +137,12 @@ button {
   margin-right: auto;
 }
 
+/* Center the helper line under the sign-in button (text-align inherits into sp-help-text's text). */
+.login-help-center {
+  display: block;
+  text-align: center;
+}
+
 .login-action {
   display: flex;
   flex-direction: column;
@@ -195,6 +201,26 @@ button {
 }
 .login-btn--ghost:hover {
   color: #d8d8d8;
+}
+
+/* Google sign-in button — per Google's Sign-In branding guidelines: white surface, neutral #747775
+   stroke, #1f1f1f label, 4px radius, Roboto Medium, and the un-altered multicolour "G" to its left.
+   Flexbox gap is unreliable in UXP, so the logo spacing is a margin on the icon (not `gap`). */
+.login-btn--google {
+  color: #1f1f1f;
+  background: #ffffff;
+  border-color: #747775;
+  border-radius: 4px;
+  font-weight: 500;
+  font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+}
+.login-btn--google:hover {
+  background: #f7f8f8;
+}
+.login-btn-gicon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
 }
 
 .login-btn--disabled {
@@ -443,9 +469,9 @@ button {
 }
 
 /* Inline project browser (replaces the old modal popup): lives in the panel flow below the
-   source picker, framed by a dashed box to match the source control. */
+   source picker, framed by a solid box. */
 .proj-browser {
-  border: 1px dashed #6a6a6a;
+  border: 1px solid #6a6a6a;
   border-radius: 6px;
   padding: 10px;
 }
