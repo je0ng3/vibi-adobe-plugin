@@ -1,8 +1,8 @@
-# Vibi Separate — for Adobe Premiere Pro
+# Vibi: AI Sound Eraser — for Adobe Premiere Pro
 
 **AI audio stem separation, speaker editing, and re-mix — right inside Premiere Pro.**
 
-Vibi Separate is a UXP panel for video editors. Drop in any clip, split its audio into per-speaker stems and background, review the transcript, fix who-said-what, and send a clean mix straight back to your project — without leaving Premiere.
+Vibi: AI Sound Eraser is a UXP panel for video editors. Drop in any clip, split its audio into per-speaker stems and background, review the transcript, fix who-said-what, and send a clean mix straight back to your project — without leaving Premiere.
 
 ---
 

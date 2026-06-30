@@ -1,6 +1,7 @@
-// vibi brand mark: a waveform inside a rounded gradient square — a tiny echo of the
-// waveform shown in-app. Kept as inline SVG so it stays crisp at any size and matches
-// the plugin icon (icons/icon-23.png is a raster of this same mark).
+// vibi brand mark: a white "V" inside a rounded purple square — the same mark as the
+// vibi app icon. Kept as inline SVG so it stays crisp at any size and matches the plugin
+// icon (icons/icon-23.png is a raster of this same mark, with the icon's gradient flattened
+// to a solid fill here because UXP doesn't render SVG gradients).
 
 interface MarkProps {
   size?: number;
@@ -18,20 +19,10 @@ export function BrandMark({ size = 24, className }: MarkProps) {
       className={className}
       aria-hidden="true"
     >
-      <defs>
-        <linearGradient id="vibiGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#2680eb" />
-          <stop offset="1" stopColor="#7b5bff" />
-        </linearGradient>
-      </defs>
-      <rect width="48" height="48" rx="11" fill="url(#vibiGrad)" />
-      <g fill="#ffffff">
-        <rect x="9.9" y="17" width="3.4" height="14" rx="1.7" opacity="0.92" />
-        <rect x="16.1" y="11" width="3.4" height="26" rx="1.7" />
-        <rect x="22.3" y="20" width="3.4" height="8" rx="1.7" opacity="0.88" />
-        <rect x="28.5" y="14" width="3.4" height="20" rx="1.7" opacity="0.96" />
-        <rect x="34.7" y="19" width="3.4" height="10" rx="1.7" opacity="0.84" />
-      </g>
+      {/* solid fill, not a gradient: UXP drops SVG gradients (renders the rect black),
+          so a flat brand-purple keeps the chip coloured in-panel. */}
+      <rect width="48" height="48" rx="11" fill="#5c58c9" />
+      <path d="M13.3 12 L18.6 12 L24 28.3 L29.2 12 L34.7 12 L26.8 36 L21 36 Z" fill="#ffffff" />
     </svg>
   );
 }

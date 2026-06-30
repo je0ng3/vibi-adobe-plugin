@@ -1,4 +1,4 @@
-# Vibi Separate
+# Vibi: AI Sound Eraser
 
 A React/UXP panel for Adobe Premiere Pro that splits a clip's audio into per-speaker voice
 stems and background music using **Perso AI** — separate, preview, balance, and drop the result
@@ -58,7 +58,7 @@ UXP runtime.
 
 ```
 Premiere Pro (UXP)
-  └─ Vibi Separate panel        ← this repo (React + TS → .ccx)
+  └─ Vibi: AI Sound Eraser panel  ← this repo (React + TS → .ccx)
          │  HTTPS  (BFF_BASE_URL, build-time)
          ▼
    vibi-bff  (api.vibi.fm)      ← shared backend (Kotlin/Ktor/Cloud Run)
