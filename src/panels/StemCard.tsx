@@ -102,6 +102,7 @@ export function StemCard({
   }
 
   const progress = stem.durationSec > 0 ? currentTime / stem.durationSec : 0;
+  const [volumeOpen, setVolumeOpen] = useState(false);
 
   // In a browser (Web Audio present) toggle in-panel playback; in UXP (no audio output) open the
   // clip in the OS default player. <div role="button"> not <button> — UXP buttons render as gray pills.
@@ -136,41 +137,68 @@ export function StemCard({
             {canPlay && isActive && !paused ? "❚❚" : "▶"}
           </div>
         )}
-        <span className="stem-card-label">{stem.label}</span>
-        <div className="stem-card-wave">
-          <Waveform
-            peaks={stem.peaks}
-            selected={stem.selected}
-            volume={stem.volume}
-            progress={progress}
-            onSeek={seekRatio}
-          />
-        </div>
-        {canPlay && isActive && stem.durationSec > 0 && (
-          <span className="preview-time">
-            {formatClock(currentTime)} / {formatClock(stem.durationSec)}
-          </span>
-        )}
-        <label className="stem-card-check">
-          <input
-            type="checkbox"
-            checked={stem.selected}
-            onChange={(e) => onToggleSelected(e.currentTarget.checked)}
-            aria-label={`Select ${stem.label}`}
-          />
-        </label>
-      </div>
 
-      <div className="stem-card-fader">
-        <input
-          type="range"
-          min={0}
-          max={150}
-          value={stem.volume}
-          onChange={(e) => onVolumeChange(Number(e.currentTarget.value))}
-          aria-label={`${stem.label} volume`}
-        />
-        <span className="stem-card-db">{formatDb(stem.volume)}</span>
+        <div className="stem-card-content">
+          <div className="stem-card-header">
+            <span className="stem-card-label">{stem.label}</span>
+            <div className="stem-card-wave">
+              <Waveform
+                peaks={stem.peaks}
+                selected={stem.selected}
+                volume={stem.volume}
+                progress={progress}
+                onSeek={seekRatio}
+              />
+            </div>
+          </div>
+
+          <div className="stem-card-footer">
+            <span className="preview-time">
+              {formatClock(isActive ? currentTime : 0)} / {" "}
+              {formatClock(stem.durationSec)}
+            </span>
+
+            <div className="stem-card-actions"> 
+              <div className="volume-control"> 
+                <div
+                  className="volume-button"
+                  role="button"
+                  onClick={() => setVolumeOpen(!volumeOpen)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setVolumeOpen(v => !v);
+                    }
+                  }}
+                >
+                  ♫
+                </div>
+                {volumeOpen && (
+                  <div className="volume-popup">
+                    <input
+                      className="volume-slider"
+                      type="range"
+                      min={0}
+                      max={200}
+                      value={stem.volume}
+                      onChange={(e) => onVolumeChange(Number(e.currentTarget.value))}
+                      aria-label={`${stem.label} volume`}
+                    />
+                    <span>{formatDb(stem.volume)}</span>
+                  </div>
+                )}
+              </div>
+              <label className="stem-card-check">
+                <input
+                  type="checkbox"
+                  checked={stem.selected}
+                  onChange={(e) => onToggleSelected(e.currentTarget.checked)}
+                  aria-label={`Select ${stem.label}`}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
     </li>
   );

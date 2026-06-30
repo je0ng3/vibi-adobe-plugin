@@ -12,13 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@spectrum-web-components/progress-bar": "0.37.0",
+    "@spectrum-web-components/styles": "0.37.0",
+    "@spectrum-web-components/theme": "0.37.0",
     "@swc-uxp-wrappers/button": "^2.0.0",
     "@swc-uxp-wrappers/field-label": "^2.0.0",
     "@swc-uxp-wrappers/help-text": "^2.0.0",
     "@swc-uxp-wrappers/textfield": "^2.0.0",
-    "@spectrum-web-components/progress-bar": "0.37.0",
-    "@spectrum-web-components/styles": "0.37.0",
-    "@spectrum-web-components/theme": "0.37.0",
+    "lucide-react": "^1.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

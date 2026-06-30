@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import type { ScriptDraft, TranscriptSegment } from "../types/job";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ScriptDraft, Speaker, TranscriptSegment } from "../types/job";
+import { defaultSpeakerLabel, isAutoSpeakerLabel } from "../types/job";
 import { formatClock } from "../audio/format";
 
 interface Props {
@@ -14,6 +15,22 @@ interface Props {
 // the list and in every line tag; past the third speaker the palette wraps.
 const SPEAKER_COLORS = ["#644AFF", "#0BC673", "#F0A93D"];
 const colorFor = (index: number) => SPEAKER_COLORS[Math.abs(index) % SPEAKER_COLORS.length];
+
+// The speaker tags all share one width — sized to fit the *longest* speaker name so every tag is
+// the same size (and the dialogue still starts at the same x), capped at 84px so a very long name
+// ellipsizes instead of shoving the dialogue off-screen. UXP can't measure text, so estimate from
+// character widths at 11px/600: CJK glyphs ~12px, everything else ~6.5px, plus the tag's padding.
+const TAG_MAX_WIDTH = 84;
+function tagWidthFor(speakers: Speaker[]): number {
+  // Wide (CJK etc.) glyphs sit above the Latin-1 block (code point > 0xFF); count them ~12px.
+  const widthOf = (label: string) =>
+    [...label].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0xff ? 12 : 6.5), 0);
+  const widest = speakers.reduce(
+    (max, sp) => Math.max(max, widthOf(sp.label || defaultSpeakerLabel(sp.index))),
+    0,
+  );
+  return Math.min(TAG_MAX_WIDTH, Math.ceil(widest) + 16); // +16 for 8px padding either side
+}
 
 function formatMs(ms: number): string {
   return formatClock(ms / 1000, { padMinutes: true });
@@ -68,15 +85,32 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
       }
     }
     setPendingFocus(null);
-  }, [pendingFocus]);
+  }, [draft.segments]);
+
+
+  // The line tags share one width that tracks the longest speaker name; recompute it whenever the
+  // speaker set actually changes (a committed rename, or add/remove). It is NOT recomputed mid-edit
+  // because a rename only commits on blur (see the speaker-name input) — so there's no per-keystroke
+  // relayout to fight.
+  const tagWidth = useMemo(
+    () => tagWidthFor(draft.speakers),
+    [draft.speakers]
+  )
 
   function renameSpeaker(index: number, label: string) {
-    onChange({ ...draft, speakers: draft.speakers.map((sp) => (sp.index === index ? { ...sp, label } : sp)) });
+    onChange({
+      ...draft,
+      speakers: draft.speakers.map((sp) =>
+        sp.index === index
+          ? { ...sp, label }
+          : sp
+      ),
+    });
   }
 
   function addSpeaker() {
     const nextIndex = draft.speakers.reduce((m, sp) => Math.max(m, sp.index), 0) + 1;
-    onChange({ ...draft, speakers: [...draft.speakers, { index: nextIndex, label: `화자 ${nextIndex}` }] });
+    onChange({ ...draft, speakers: [...draft.speakers, { index: nextIndex, label: defaultSpeakerLabel(nextIndex) }] });
   }
 
   function removeSpeaker(index: number) {
@@ -175,8 +209,9 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
     });
   }
 
-  const labelFor = (index: number) => draft.speakers.find((sp) => sp.index === index)?.label || `화자 ${index}`;
   const countFor = (index: number) => draft.segments.filter((s) => s.speakerIndex === index).length;
+  const displayLabel = (sp: Speaker) => 
+    sp.label?.trim() ? sp.label : defaultSpeakerLabel(sp.index);
 
   return (
     <div className="script-editor">
@@ -186,11 +221,29 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
           <div className="spk-row" key={sp.index}>
             <span className="spk-dot" style={{ background: colorFor(sp.index) }} aria-hidden />
             <input
+              // The field starts EMPTY for an auto/default label (the default shows as a greyed
+              // placeholder instead) and only carries text for a genuinely-renamed speaker. This
+              // sidesteps a UXP bug: when a *pristine* field that holds programmatic text gains focus,
+              // UXP selects the whole value with the caret anchored at 0, and its selection API is
+              // decoupled from the real caret (setSelectionRange reports a new position but the visible
+              // caret stays at the front) — so it can't be corrected by JS. An empty field has nothing
+              // to select, so the caret behaves and the user just types the name. It stays
+              // uncontrolled (defaultValue, no `value`) so React never re-applies the value to the DOM
+              // — the field owns its text and keeps the caret. onChange still fires per keystroke so
+              // the name updates live in the line tags; blur only normalises an emptied field back to
+              // the default.
               className="spk-name"
               type="text"
-              value={sp.label}
-              placeholder={`화자 ${sp.index}`}
+              defaultValue={isAutoSpeakerLabel(sp.label) ? "" : sp.label}
+              placeholder={defaultSpeakerLabel(sp.index)}
+              spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
               onChange={(e) => renameSpeaker(sp.index, e.currentTarget.value)}
+              onBlur={(e) => {
+                if (e.currentTarget.value.trim() === "") renameSpeaker(sp.index, defaultSpeakerLabel(sp.index));
+              }}
             />
             <span className="spk-count">{countFor(sp.index)} clips</span>
             <div
@@ -209,6 +262,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
       <div className="spk-add" role="button" tabIndex={0} onClick={addSpeaker}>
         + Add speaker
       </div>
+
 
       {/* Lines: edit text directly; Enter mid-line splits, Backspace at the start merges up; tap the
           time to fine-tune the split, tap the colored tag to reassign the speaker. */}
@@ -248,7 +302,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 className="seg-tag"
                 role="button"
                 tabIndex={0}
-                style={{ background: colorFor(seg.speakerIndex) }}
+                style={{ background: colorFor(seg.speakerIndex), flex: `0 0 ${tagWidth}px`, width: tagWidth }}
                 aria-haspopup="listbox"
                 aria-expanded={pickerSegId === seg.id}
                 title="Tap to choose speaker"
@@ -260,18 +314,23 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                   }
                 }}
               >
-                {labelFor(seg.speakerIndex)}
+                {displayLabel(draft.speakers.find((sp) => sp.index === seg.speakerIndex) ?? { index: seg.speakerIndex, label: "" })}
               </div>
               <input
                 className="seg-text-input"
                 type="text"
                 ref={(el) => {
-                  inputRefs.current[seg.id] = el;
+                  if (el) inputRefs.current[seg.id] = el;
+                  else delete inputRefs.current[seg.id];
                 }}
                 value={seg.text}
                 placeholder="Empty line — type a caption"
-                onChange={(e) => setSegmentText(seg, e.currentTarget.value)}
-                onKeyDown={(e) => onTextKeyDown(e, seg)}
+                onChange={(e) => {
+                  setSegmentText(seg, e.currentTarget.value);
+                }}
+                onKeyDown={(e) => {
+                  onTextKeyDown(e, seg);
+                }}
               />
             </div>
             {pickerSegId === seg.id && (
@@ -292,7 +351,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                     }}
                   >
                     <span className="seg-spk-dot" style={{ background: colorFor(sp.index) }} aria-hidden />
-                    <span className="seg-spk-label">{sp.label || `화자 ${sp.index}`}</span>
+                    <span className="seg-spk-label">{sp.label || defaultSpeakerLabel(sp.index)}</span>
                     {sp.index === seg.speakerIndex && <span className="seg-spk-check" aria-hidden>✓</span>}
                   </div>
                 ))}

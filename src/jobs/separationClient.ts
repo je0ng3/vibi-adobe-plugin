@@ -8,6 +8,7 @@ import { fetchWithTimeout, readJson, TRANSFER_TIMEOUT_MS } from "./http";
 import { formatMb } from "../audio/format";
 import { diag } from "../diag";
 import type { ScriptDraft } from "../types/job";
+import { defaultSpeakerLabel, isAutoSpeakerLabel } from "../types/job";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 600;
@@ -241,5 +242,13 @@ export async function fetchSeparationScript(jobId: string): Promise<ScriptDraft>
     headers: await authHeader(),
   });
   if (!res.ok) throw new Error(`script fetch failed: ${check401(res.status)}`);
-  return readJson<ScriptDraft>(res, "script fetch");
+  const draft = await readJson<ScriptDraft>(res, "script fetch");
+  // Normalize auto/Korean default speaker names to the canonical English label so the script
+  // matches the separated stems ("Speaker 1" ↔ the "speaker_1" stem); user-renamed labels are kept.
+  return {
+    ...draft,
+    speakers: (draft.speakers ?? []).map((sp) =>
+      isAutoSpeakerLabel(sp.label) ? { ...sp, label: defaultSpeakerLabel(sp.index) } : sp,
+    ),
+  };
 }

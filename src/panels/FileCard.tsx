@@ -17,6 +17,7 @@ import { fetchPeaks } from "../jobs/peaksClient";
 import { segmentSpeaker } from "../jobs/segmentClient";
 import { ScriptEditor } from "./ScriptEditor";
 import type { ScriptDraft } from "../types/job";
+import { defaultSpeakerLabel, stemDisplayLabel } from "../types/job";
 import { InsufficientCreditsError } from "../jobs/creditClient";
 import { importAudioToProject, importAudioToTimeline, type AudioToImport } from "../host/premiere";
 import { makeAudioUrl, revokeAudioUrl, audioUrlToBytes } from "../audio/audioUrl";
@@ -228,7 +229,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
         restored.stems.map(async (m, idx): Promise<StemView | null> => {
           const bytes = await fetchStem(restored.jobId, m.stemId);
           if (cancelled) return null;
-          return buildStemView(bytes, m.stemId, m.label, idx === 0);
+          return buildStemView(bytes, m.stemId, stemDisplayLabel(m.stemId, m.label), idx === 0);
         }),
       );
       if (cancelled) {
@@ -279,7 +280,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
       setSeparationJobId(jobId);
       diag(`FileCard: building ${separated.length} stem view(s)`);
       const stems: StemView[] = await Promise.all(
-        separated.map((s, idx) => buildStemView(s.bytes, s.stemId, s.label, idx === 0)),
+        separated.map((s, idx) => buildStemView(s.bytes, s.stemId, stemDisplayLabel(s.stemId, s.label), idx === 0)),
       );
       diag(`FileCard: setStage done (${stems.length} stems)`);
       setStage({ kind: "done", stems, mix: null });
@@ -393,7 +394,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
           .map((seg) => ({ startMs: seg.startMs, endMs: seg.endMs }));
         const bytes = await segmentSpeaker(vocals, ranges);
         newStems.push(
-          await buildStemView(bytes, `spk-${sp.index}`, sp.label || `화자 ${sp.index}`, newStems.length === 0),
+          await buildStemView(bytes, `spk-${sp.index}`, sp.label || defaultSpeakerLabel(sp.index), newStems.length === 0),
         );
       }
       // Keep the original background stem — the script only re-cuts the speaker voices, the

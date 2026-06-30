@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Waveform } from "./Waveform";
 import { play, stop, pause, resume, seek, getCurrentTime, playingId, playbackSupported } from "../audio/player";
 import { previewInDefaultApp } from "../audio/preview";
-import { formatClock, formatMb } from "../audio/format";
+import { formatClock } from "../audio/format";
 
 const canPlay = playbackSupported();
 
@@ -100,7 +100,6 @@ export function MixOutputView({
   }
 
   const progress = result.durationSec > 0 ? currentTime / result.durationSec : 0;
-  const sizeMb = formatMb(result.byteLength);
 
   // Browser: toggle in-panel playback. UXP (no audio output): open the mix in the OS default player.
   function preview() {
@@ -150,12 +149,9 @@ export function MixOutputView({
           ) : (
             <p className="mix-output-name">{result.name}</p>
           )}
-          <p className="mix-output-meta">WAV · {result.stemCount} stems · {sizeMb} MB</p>
-          {canPlay && isActive && result.durationSec > 0 && (
-            <p className="preview-time">
+          <p className="mix-output-meta">
               {formatClock(currentTime)} / {formatClock(result.durationSec)}
-            </p>
-          )}
+          </p>
         </div>
         <div
           className="mix-output-close"
