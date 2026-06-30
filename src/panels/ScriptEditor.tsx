@@ -325,6 +325,22 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 }}
                 value={seg.text}
                 placeholder="Empty line — type a caption"
+                onFocus={(e) => {
+                  // UXP selects a field's *whole value* when it gains focus while still holding
+                  // its original (programmatic) text — so a single keystroke would wipe the line.
+                  // The field can't be emptied like the speaker-name input (it has to show the
+                  // caption), so instead collapse the selection to the end on the next tick, after
+                  // UXP's own select-all has settled. Focusing a line then just places the caret.
+                  const el = e.currentTarget;
+                  const end = el.value.length;
+                  setTimeout(() => {
+                    try {
+                      el.setSelectionRange(end, end);
+                    } catch {
+                      /* selection API may be unavailable; at worst the select-all stands */
+                    }
+                  }, 0);
+                }}
                 onChange={(e) => {
                   setSegmentText(seg, e.currentTarget.value);
                 }}
