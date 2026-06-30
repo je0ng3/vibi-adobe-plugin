@@ -640,9 +640,17 @@ button {
 
 .file-card-chevron {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   color: #808080;
-  font-size: 17px;
+  font-size: 22px; /* larger › */
   line-height: 1;
+  /* nudge the › glyph up to sit on the row's optical centre */
+  position: relative;
+  top: -1px;
 }
 
 /* Back-to-list button atop an open file's tab. */
@@ -742,8 +750,11 @@ button {
   background: transparent;
   border: none;
   color: #888;
-  font-size: 17px;
+  font-size: 13px; /* smaller × */
   line-height: 1;
+  /* nudge the × glyph down so it sits lower / centred against the larger › */
+  position: relative;
+  top: 1px;
   cursor: pointer;
 }
 
