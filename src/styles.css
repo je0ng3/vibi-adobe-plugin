@@ -1361,6 +1361,9 @@ button {
   background: rgba(255,255,255,.08);
 }
 
+/* Centred directly above the volume button. This only stays on-screen because the slider is a NARROW
+   native vertical control (below) — a wide horizontal one centred here would spill past the panel's
+   right edge. Lighter fill + border so it reads against the dark panel background. */
 .volume-popup {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -1372,26 +1375,60 @@ button {
   align-items: center;
   gap: 8px;
 
-  padding: 10px 8px;
+  padding: 10px 10px;
 
   border-radius: 8px;
-  background: #2b2b2b;
-  box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  background: #3c3c3c;
+  border: 1px solid #565656;
+  box-shadow: 0 6px 18px rgba(0,0,0,.5);
   z-index: 10;
 }
 
+/* Custom vertical slider (plain divs). UXP can't render a vertical <input type=range> — it ignores
+   both transform:rotate and appearance:slider-vertical, leaving it flat — so the track/fill/thumb are
+   divs dragged via JS. Bottom of the track = 0, top = max. */
 .volume-slider {
-  appearance: none;
-  width: 120px;
-  height: 4px;
-
-  transform: rotate(-90deg);
-  transform-origin: center;
+  position: relative;
+  width: 6px;
+  height: 120px;
+  border-radius: 3px;
+  background: #1f1f1f;
+  cursor: pointer;
 }
 
-.volume-popup span {
+.volume-slider-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  border-radius: 3px;
+  background: #644aff;
+}
+
+.volume-slider-thumb {
+  position: absolute;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-bottom: -7px; /* center the thumb on the value position */
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
+
+/* Two centered lines (value over "dB") at a fixed width, so the popup doesn't resize (and the centred
+   slider doesn't shift) as the value changes width between "−∞", "0.0", "+6.0", "−40.0", etc. */
+.volume-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 34px;
   font-size: 10px;
+  line-height: 1.2;
   color: #bbb;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Elapsed / total time shown during in-panel preview (stem rows and the mix output). tabular-nums

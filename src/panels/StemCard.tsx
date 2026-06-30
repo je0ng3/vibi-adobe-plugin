@@ -104,6 +104,31 @@ export function StemCard({
   const progress = stem.durationSec > 0 ? currentTime / stem.durationSec : 0;
   const [volumeOpen, setVolumeOpen] = useState(false);
 
+  // UXP can't render a vertical <input type="range"> (it ignores both transform:rotate and
+  // appearance:slider-vertical), so the volume control is a plain-div slider: a track, a fill, and a
+  // thumb, dragged via document mouse events (the same pattern Waveform uses). Volume runs 0–200 with
+  // the bottom of the track = 0 and the top = 200.
+  const VOL_MAX = 200;
+  const volTrackRef = useRef<HTMLDivElement | null>(null);
+  function volFromClientY(clientY: number): number {
+    const el = volTrackRef.current;
+    if (!el) return stem.volume;
+    const rect = el.getBoundingClientRect();
+    const ratio = 1 - (clientY - rect.top) / rect.height; // top → 1, bottom → 0
+    return Math.round(Math.max(0, Math.min(1, ratio)) * VOL_MAX);
+  }
+  function onVolPointerDown(e: React.MouseEvent) {
+    e.preventDefault();
+    onVolumeChange(volFromClientY(e.clientY));
+    const move = (ev: MouseEvent) => onVolumeChange(volFromClientY(ev.clientY));
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
   // In a browser (Web Audio present) toggle in-panel playback; in UXP (no audio output) open the
   // clip in the OS default player. <div role="button"> not <button> — UXP buttons render as gray pills.
   function preview() {
@@ -175,16 +200,39 @@ export function StemCard({
                 </div>
                 {volumeOpen && (
                   <div className="volume-popup">
-                    <input
+                    <div
                       className="volume-slider"
-                      type="range"
-                      min={0}
-                      max={200}
-                      value={stem.volume}
-                      onChange={(e) => onVolumeChange(Number(e.currentTarget.value))}
+                      ref={volTrackRef}
+                      role="slider"
+                      tabIndex={0}
                       aria-label={`${stem.label} volume`}
-                    />
-                    <span>{formatDb(stem.volume)}</span>
+                      aria-valuemin={0}
+                      aria-valuemax={VOL_MAX}
+                      aria-valuenow={stem.volume}
+                      onMouseDown={onVolPointerDown}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowUp" || e.key === "ArrowRight") {
+                          e.preventDefault();
+                          onVolumeChange(Math.min(VOL_MAX, stem.volume + 5));
+                        } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
+                          e.preventDefault();
+                          onVolumeChange(Math.max(0, stem.volume - 5));
+                        }
+                      }}
+                    >
+                      <div
+                        className="volume-slider-fill"
+                        style={{ height: `${(stem.volume / VOL_MAX) * 100}%` }}
+                      />
+                      <div
+                        className="volume-slider-thumb"
+                        style={{ bottom: `${(stem.volume / VOL_MAX) * 100}%` }}
+                      />
+                    </div>
+                    <span className="volume-readout">
+                      <span>{formatDb(stem.volume)}</span>
+                      <span>dB</span>
+                    </span>
                   </div>
                 )}
               </div>
@@ -204,9 +252,10 @@ export function StemCard({
   );
 }
 
+// Numeric part only ("−∞", "+6.0", "−3.5"); the "dB" unit is rendered on its own line in the markup.
 function formatDb(volume: number): string {
-  if (volume <= 0) return "−∞ dB";
+  if (volume <= 0) return "−∞";
   const db = 20 * Math.log10(volume / 100);
   const sign = db > 0 ? "+" : "";
-  return `${sign}${db.toFixed(1)} dB`;
+  return `${sign}${db.toFixed(1)}`;
 }
