@@ -515,7 +515,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
     prepFailed ? "Unreadable"
     : stage.kind === "restoring" ? "Saved"
     : stage.kind === "prepping" ? "Ready to separate"
-    : stage.kind === "generating" ? `Separating…${stage.progress > 0 ? ` ${Math.round(stage.progress)}%` : ""}`
+    : stage.kind === "generating" ? `Separating… ${Math.round(stage.progress)}%`
     : stage.kind === "done" ? "Separated"
     : "Error";
 
@@ -644,9 +644,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
           <ul className="job-progress-list">
             <li className="job-progress-row">
               <span className="job-progress-label">{stage.reason ?? "Stem separation"}</span>
-              {stage.progress > 0 && (
-                <span className="job-progress-pct">{Math.round(stage.progress)}%</span>
-              )}
+              <span className="job-progress-pct">{Math.round(stage.progress)}%</span>
             </li>
           </ul>
         </div>
