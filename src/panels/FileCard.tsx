@@ -742,15 +742,16 @@ function MixControls({ selectedCount, busy, onMix }: MixControlsProps) {
       <span className="mix-controls-count">
         {selectedCount} {selectedCount === 1 ? "stem" : "stems"} selected
       </span>
-      <sp-button
-        variant="accent"
-        size="s"
-        disabled={selectedCount === 0 || busy || undefined}
-        pending={busy || undefined}
-        onClick={onMix}
+      {/* Same custom accent button as ScriptEditor's "Regenerate audio" — sp-button renders as a
+          grey pill in UXP, so use the <div role="button"> + .mix-btn styling for a matching look. */}
+      <div
+        className={`mix-btn mix-btn--accent${selectedCount === 0 || busy ? " mix-btn--disabled" : ""}`}
+        role="button"
+        tabIndex={selectedCount === 0 || busy ? -1 : 0}
+        onClick={selectedCount === 0 || busy ? undefined : onMix}
       >
-        Mix selected
-      </sp-button>
+        {busy ? "Mixing…" : "Mix selected"}
+      </div>
     </div>
   );
 }
