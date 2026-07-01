@@ -689,22 +689,30 @@ button {
   color: #8fc4ff;
 }
 
-/* Text "Delete" on the detail top bar — muted, reddens on hover. */
+/* Trash icon on the detail top bar — muted; on hover it brightens to the same highlight the file
+   list uses (#e4e4e4), not red. Nudged left of the right edge with a right margin. */
 .file-card-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
-  color: #888;
+  color: #808080;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
   padding: 4px 6px;
   border-radius: 4px;
+  margin-right: 8px;
 }
 
 .file-card-delete:hover,
 .file-card-delete:focus {
-  color: #ec5b62;
+  color: #e4e4e4;
 }
+
+/* Explicit fill — UXP doesn't reliably honor fill="currentColor" (see .file-card-remove svg). */
+.file-card-delete svg { fill: #808080; }
+.file-card-delete:hover svg,
+.file-card-delete:focus svg { fill: #e4e4e4; }
 
 /* Non-open tabs stay mounted (state preserved) but take no layout space. */
 .file-card-hidden {
@@ -749,16 +757,21 @@ button {
   padding: 0;
   background: transparent;
   border: none;
-  color: #888;
-  font-size: 13px; /* smaller × */
+  color: #808080; /* match the › chevron (.file-card-chevron) */
+  font-size: 13px; /* only affects the text ✕ still used by BuyCreditsModal's close; the trash SVG is sized explicitly */
   line-height: 1;
-  /* nudge the × glyph down so it sits lower / centred against the larger › */
-  position: relative;
-  top: 1px;
   cursor: pointer;
 }
 
+/* Nudge the trash icon slightly left of the file row's right edge (row only — not the
+   BuyCreditsModal close button, which also uses .file-card-remove). */
+.file-card-actions .file-card-remove { margin-right: 4px; position: relative; top: 1px; }
+
 .file-card-remove:hover { color: #e4e4e4; }
+/* UXP doesn't reliably resolve the SVG's fill="currentColor" from the CSS `color`, so set the
+   trash icon's fill directly (CSS `fill` DOES work in UXP — cf. .waveform-bar). */
+.file-card-remove svg { fill: #808080; }
+.file-card-remove:hover svg { fill: #e4e4e4; }
 
 .file-card-body {
   display: flex;
@@ -1733,13 +1746,16 @@ button {
   padding: 4px 8px;
   -webkit-appearance: none;
   appearance: none;
-  background: transparent;
+  background: #1f1f1f;
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--spectrum-global-color-gray-800, #ebebeb);
   font-family: inherit;
   font-size: 13px;
 }
+/* Opaque resting fill (matches the panel behind it), NOT `transparent`: Windows UXP paints an
+   opaque native field behind inputs — `transparent` lets that black show through (macOS doesn't).
+   Same colour as the backdrop, so the "seamless text" look is unchanged on both OSes. */
 .spk-name:hover { background: var(--spectrum-global-color-gray-100, #2a2a2a); }
 .spk-name:focus { outline: none; }
 .spk-count {
@@ -1836,6 +1852,15 @@ button {
   margin: 0 0 1px;
   padding: 1px 4px;
   font-size: 10px;
+  /* Explicit appearance reset + opaque fill: without these UXP on Windows draws its native
+     (black) field chrome. macOS hid it by default, so this only shows up cross-OS. */
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1f1f1f;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  color: #f4f4f4;
+  font-family: inherit;
 }
 /* The dialogue line is a seamless inline input — looks like text until focused */
 .seg-text-input {
@@ -1846,7 +1871,8 @@ button {
   -webkit-appearance: none;
   appearance: none;
   border: 1px solid transparent;
-  background: transparent;
+  /* opaque backdrop-matched fill — see .spk-name note (Windows native field bleeds through `transparent`) */
+  background: #1f1f1f;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.35;
@@ -1868,8 +1894,10 @@ button {
   font-weight: 600;
   font-family: inherit;
   color: #f4f4f4;
-  /* Resting state reads as plain text; the editable affordance only appears on hover/focus. */
-  background: transparent;
+  /* Resting state reads as plain text; the editable affordance only appears on hover/focus.
+     Opaque fill matched to .mix-output (#232a36), not `transparent` — Windows UXP paints an
+     opaque native field behind inputs that a transparent background can't hide. */
+  background: #232a36;
   border: 1px solid transparent;
   border-radius: 4px;
   padding: 2px 4px;
