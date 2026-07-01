@@ -593,7 +593,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
                 ›
               </span>
             </div>
-            <div className="file-card-actions">{deleteAction("file-card-remove", <IconTrash size={15} />)}</div>
+            <div className="file-card-actions">{deleteAction("file-card-remove", <IconTrash size={16} />)}</div>
           </>
         ) : (
           <div className="file-card-info">

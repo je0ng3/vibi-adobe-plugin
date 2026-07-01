@@ -756,6 +756,10 @@ button {
   cursor: pointer;
 }
 
+/* Nudge the trash icon slightly left of the file row's right edge (row only — not the
+   BuyCreditsModal close button, which also uses .file-card-remove). */
+.file-card-actions .file-card-remove { margin-right: 4px; }
+
 .file-card-remove:hover { color: #e4e4e4; }
 
 .file-card-body {
