@@ -564,7 +564,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             </span>
             All files
           </div>
-          {deleteAction("file-card-delete", <IconTrash size={16} />)}
+          {deleteAction("file-card-delete", <IconTrash size={18} />)}
         </div>
       )}
       <div className="file-card-header">

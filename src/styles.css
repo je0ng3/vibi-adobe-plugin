@@ -689,28 +689,30 @@ button {
   color: #8fc4ff;
 }
 
-/* Trash icon on the detail top bar — muted, reddens on hover (icon inherits currentColor). */
+/* Trash icon on the detail top bar — muted; on hover it brightens to the same highlight the file
+   list uses (#e4e4e4), not red. Nudged left of the right edge with a right margin. */
 .file-card-delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
-  color: #888;
+  color: #808080;
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 4px;
+  margin-right: 8px;
 }
 
 .file-card-delete:hover,
 .file-card-delete:focus {
-  color: #ec5b62;
+  color: #e4e4e4;
 }
 
 /* Explicit fill — UXP doesn't reliably honor fill="currentColor" (see .file-card-remove svg). */
-.file-card-delete svg { fill: #888; }
+.file-card-delete svg { fill: #808080; }
 .file-card-delete:hover svg,
-.file-card-delete:focus svg { fill: #ec5b62; }
+.file-card-delete:focus svg { fill: #e4e4e4; }
 
 /* Non-open tabs stay mounted (state preserved) but take no layout space. */
 .file-card-hidden {
