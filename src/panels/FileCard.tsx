@@ -634,9 +634,16 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
                 ? `Costs ${creditsForDuration(durationSec)} credit${creditsForDuration(durationSec) === 1 ? "" : "s"}`
                 : "Reading audio…"}
             </span>
-            <sp-button variant="accent" disabled={basePeaks == null ? true : undefined} onClick={onGenerate}>
+            {/* Same custom accent button as "Mix selected" / "Regenerate audio" — sp-button renders
+                as a grey pill in UXP. Disabled until the source's peaks have decoded. */}
+            <div
+              className={`mix-btn mix-btn--accent${basePeaks == null ? " mix-btn--disabled" : ""}`}
+              role="button"
+              tabIndex={basePeaks == null ? -1 : 0}
+              onClick={basePeaks == null ? undefined : onGenerate}
+            >
               Separate
-            </sp-button>
+            </div>
           </div>
         </div>
       )}
