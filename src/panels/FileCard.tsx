@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { LoadedAudioSource } from "../input/audioPicker";
+import { IconTrash } from "../components/Icons";
 import { StemListView, type StemView } from "./StemListView";
 import { MixOutputView, type MixResult } from "./MixOutputView";
 import { Waveform } from "./Waveform";
@@ -523,7 +525,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   // job and loaded stems survive.
   if (view === "hidden") return null;
 
-  const deleteAction = (className: string, label: string) => (
+  const deleteAction = (className: string, icon: ReactNode) => (
     <div
       className={className}
       role="button"
@@ -537,7 +539,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
         }
       }}
     >
-      {label}
+      {icon}
     </div>
   );
 
@@ -562,7 +564,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             </span>
             All files
           </div>
-          {deleteAction("file-card-delete", "Delete")}
+          {deleteAction("file-card-delete", <IconTrash size={16} />)}
         </div>
       )}
       <div className="file-card-header">
@@ -591,7 +593,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
                 ›
               </span>
             </div>
-            <div className="file-card-actions">{deleteAction("file-card-remove", "✕")}</div>
+            <div className="file-card-actions">{deleteAction("file-card-remove", <IconTrash size={15} />)}</div>
           </>
         ) : (
           <div className="file-card-info">

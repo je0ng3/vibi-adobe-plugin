@@ -689,14 +689,15 @@ button {
   color: #8fc4ff;
 }
 
-/* Text "Delete" on the detail top bar — muted, reddens on hover. */
+/* Trash icon on the detail top bar — muted, reddens on hover (icon inherits currentColor). */
 .file-card-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
   color: #888;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
   padding: 4px 6px;
   border-radius: 4px;
 }
@@ -750,11 +751,8 @@ button {
   background: transparent;
   border: none;
   color: #888;
-  font-size: 13px; /* smaller × */
+  font-size: 13px; /* only affects the text ✕ still used by BuyCreditsModal's close; the trash SVG is sized explicitly */
   line-height: 1;
-  /* nudge the × glyph down so it sits lower / centred against the larger › */
-  position: relative;
-  top: 1px;
   cursor: pointer;
 }
 

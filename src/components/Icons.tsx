@@ -63,6 +63,17 @@ export function IconAudio(props: IconProps) {
   );
 }
 
+// Spectrum "Delete" — trash can, used for the remove/delete affordances. Silhouette only
+// (lid + handle + tapered body) so it reads clearly at small sizes without internal cut-outs.
+export function IconTrash(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M15 3a2 2 0 0 0-2 2v1H6a1 1 0 0 0 0 2h1.24l1.55 21.14A3 3 0 0 0 11.78 32h12.44a3 3 0 0 0 2.99-2.86L28.76 8H30a1 1 0 0 0 0-2h-7V5a2 2 0 0 0-2-2Zm0 3V5h6v1Zm-5.75 2h17.5l-1.53 20.86a1 1 0 0 1-1 .93H11.78a1 1 0 0 1-1-.93Z" />
+      <path d="M15.5 12a1 1 0 0 0-1 1v13a1 1 0 0 0 2 0V13a1 1 0 0 0-1-1ZM20.5 12a1 1 0 0 0-1 1v13a1 1 0 0 0 2 0V13a1 1 0 0 0-1-1Z" />
+    </Svg>
+  );
+}
+
 // Spectrum "Video Outline" — video media item (audio extracted on import).
 export function IconVideo(props: IconProps) {
   return (
