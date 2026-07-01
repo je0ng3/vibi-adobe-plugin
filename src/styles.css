@@ -1733,13 +1733,16 @@ button {
   padding: 4px 8px;
   -webkit-appearance: none;
   appearance: none;
-  background: transparent;
+  background: #1f1f1f;
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--spectrum-global-color-gray-800, #ebebeb);
   font-family: inherit;
   font-size: 13px;
 }
+/* Opaque resting fill (matches the panel behind it), NOT `transparent`: Windows UXP paints an
+   opaque native field behind inputs — `transparent` lets that black show through (macOS doesn't).
+   Same colour as the backdrop, so the "seamless text" look is unchanged on both OSes. */
 .spk-name:hover { background: var(--spectrum-global-color-gray-100, #2a2a2a); }
 .spk-name:focus { outline: none; }
 .spk-count {
@@ -1836,6 +1839,15 @@ button {
   margin: 0 0 1px;
   padding: 1px 4px;
   font-size: 10px;
+  /* Explicit appearance reset + opaque fill: without these UXP on Windows draws its native
+     (black) field chrome. macOS hid it by default, so this only shows up cross-OS. */
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1f1f1f;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  color: #f4f4f4;
+  font-family: inherit;
 }
 /* The dialogue line is a seamless inline input — looks like text until focused */
 .seg-text-input {
@@ -1846,7 +1858,8 @@ button {
   -webkit-appearance: none;
   appearance: none;
   border: 1px solid transparent;
-  background: transparent;
+  /* opaque backdrop-matched fill — see .spk-name note (Windows native field bleeds through `transparent`) */
+  background: #1f1f1f;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.35;
@@ -1868,8 +1881,10 @@ button {
   font-weight: 600;
   font-family: inherit;
   color: #f4f4f4;
-  /* Resting state reads as plain text; the editable affordance only appears on hover/focus. */
-  background: transparent;
+  /* Resting state reads as plain text; the editable affordance only appears on hover/focus.
+     Opaque fill matched to .mix-output (#232a36), not `transparent` — Windows UXP paints an
+     opaque native field behind inputs that a transparent background can't hide. */
+  background: #232a36;
   border: 1px solid transparent;
   border-radius: 4px;
   padding: 2px 4px;
