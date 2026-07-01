@@ -750,7 +750,7 @@ button {
   padding: 0;
   background: transparent;
   border: none;
-  color: #888;
+  color: #808080; /* match the › chevron (.file-card-chevron) */
   font-size: 13px; /* only affects the text ✕ still used by BuyCreditsModal's close; the trash SVG is sized explicitly */
   line-height: 1;
   cursor: pointer;
