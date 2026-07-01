@@ -707,6 +707,11 @@ button {
   color: #ec5b62;
 }
 
+/* Explicit fill — UXP doesn't reliably honor fill="currentColor" (see .file-card-remove svg). */
+.file-card-delete svg { fill: #888; }
+.file-card-delete:hover svg,
+.file-card-delete:focus svg { fill: #ec5b62; }
+
 /* Non-open tabs stay mounted (state preserved) but take no layout space. */
 .file-card-hidden {
   display: none;
@@ -761,6 +766,10 @@ button {
 .file-card-actions .file-card-remove { margin-right: 4px; position: relative; top: 1px; }
 
 .file-card-remove:hover { color: #e4e4e4; }
+/* UXP doesn't reliably resolve the SVG's fill="currentColor" from the CSS `color`, so set the
+   trash icon's fill directly (CSS `fill` DOES work in UXP — cf. .waveform-bar). */
+.file-card-remove svg { fill: #808080; }
+.file-card-remove:hover svg { fill: #e4e4e4; }
 
 .file-card-body {
   display: flex;
