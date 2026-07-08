@@ -1,4 +1,4 @@
-import { BFF_BASE_URL } from "../config";
+import { BFF_BASE_URL, SEPARATION_RETENTION_DAYS } from "../config";
 import { authHeader } from "../auth/tokenStore";
 import { check401 } from "../auth/session";
 import { throwIfInsufficient } from "./creditClient";
@@ -215,7 +215,14 @@ export async function listSeparations(projectId: string | null): Promise<SavedSe
   });
   if (!res.ok) throw new Error(`history list failed: ${check401(res.status)}`);
   const data = await readJson<{ separations: SavedSeparationWire[] }>(res, "history list");
-  return (data.separations ?? []).map((s) => ({
+  // The server keeps history metadata indefinitely, but the R2 stem objects are deleted after
+  // SEPARATION_RETENTION_DAYS. Drop anything past that window so the list only offers results that
+  // can actually be restored — a card whose stems are gone would just fail on open.
+  const retentionMs = SEPARATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  return (data.separations ?? [])
+    .filter((s) => now - s.createdAt < retentionMs)
+    .map((s) => ({
     jobId: s.jobId,
     fileName: s.fileName ?? "audio",
     byteLength: s.byteLength ?? 0,

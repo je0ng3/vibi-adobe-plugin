@@ -19,7 +19,7 @@ import { fetchPeaks } from "../jobs/peaksClient";
 import { segmentSpeaker } from "../jobs/segmentClient";
 import { ScriptEditor } from "./ScriptEditor";
 import type { ScriptDraft } from "../types/job";
-import { defaultSpeakerLabel, stemDisplayLabel } from "../types/job";
+import { defaultSpeakerLabel, isBackgroundStemId, isDefaultSelectedStem, stemDisplayLabel } from "../types/job";
 import { InsufficientCreditsError } from "../jobs/creditClient";
 import { importAudioToProject, importAudioToTimeline, type AudioToImport } from "../host/premiere";
 import { makeAudioUrl, revokeAudioUrl, audioUrlToBytes } from "../audio/audioUrl";
@@ -227,19 +227,37 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
     (async () => {
       setDurationSec(restored.durationSec);
       setSeparationJobId(restored.jobId);
-      const built = await Promise.all(
+      // Restore each stem independently — one expired/missing stem (e.g. a best-effort background
+      // that never uploaded, or a partially GC'd result) shouldn't sink the whole card. Rebuild from
+      // whatever survives and only fail if every stem is gone.
+      const settled = await Promise.allSettled(
         restored.stems.map(async (m, idx): Promise<StemView | null> => {
           const bytes = await fetchStem(restored.jobId, m.stemId);
           if (cancelled) return null;
-          return buildStemView(bytes, m.stemId, stemDisplayLabel(m.stemId, m.label), idx === 0);
+          return buildStemView(bytes, m.stemId, stemDisplayLabel(m.stemId, m.label), isDefaultSelectedStem(m.stemId, idx));
         }),
       );
       if (cancelled) {
         // Collapsed mid-fetch: free any handles we did mint before bailing.
-        built.forEach((s) => revokeObjectUrl(s?.audioUrl));
+        settled.forEach((r) => {
+          if (r.status === "fulfilled") revokeObjectUrl(r.value?.audioUrl);
+        });
         return;
       }
-      setStage({ kind: "done", stems: built.filter((s): s is StemView => s !== null), mix: null });
+      const stems = settled
+        .filter((r): r is PromiseFulfilledResult<StemView | null> => r.status === "fulfilled")
+        .map((r) => r.value)
+        .filter((s): s is StemView => s !== null);
+      const failed = settled.length - stems.length;
+      if (stems.length === 0) {
+        // Nothing survived — the saved result is genuinely gone. Surface the first real error.
+        const firstErr = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        throw firstErr?.reason ?? new Error("no stems could be restored");
+      }
+      if (failed > 0) {
+        console.warn(`[history] restored ${stems.length}/${restored.stems.length} stem(s); ${failed} unavailable`);
+      }
+      setStage({ kind: "done", stems, mix: null });
       finished = true;
     })().catch((e) => {
       finished = true;
@@ -282,7 +300,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
       setSeparationJobId(jobId);
       diag(`FileCard: building ${separated.length} stem view(s)`);
       const stems: StemView[] = await Promise.all(
-        separated.map((s, idx) => buildStemView(s.bytes, s.stemId, stemDisplayLabel(s.stemId, s.label), idx === 0)),
+        separated.map((s, idx) => buildStemView(s.bytes, s.stemId, stemDisplayLabel(s.stemId, s.label), isDefaultSelectedStem(s.stemId, idx))),
       );
       diag(`FileCard: setStage done (${stems.length} stems)`);
       setStage({ kind: "done", stems, mix: null });
@@ -310,6 +328,23 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
       return {
         ...prev,
         stems: prev.stems.map((s) => (s.id === stemId ? { ...s, ...partial } : s)),
+      };
+    });
+  }
+
+  // Toggle a stem's mix selection. Backgrounds are mutually exclusive — selecting one background
+  // clears the other so at most one background (pure BGM or reaction) ever feeds the mix.
+  function toggleStemSelected(stemId: string, selected: boolean) {
+    setStage((prev) => {
+      if (prev.kind !== "done") return prev;
+      const clearOtherBackground = selected && isBackgroundStemId(stemId);
+      return {
+        ...prev,
+        stems: prev.stems.map((s) => {
+          if (s.id === stemId) return { ...s, selected };
+          if (clearOtherBackground && isBackgroundStemId(s.id)) return { ...s, selected: false };
+          return s;
+        }),
       };
     });
   }
@@ -381,8 +416,9 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
       // still contains the background and every other voice, so slicing it by time would carry
       // that audio into each "speaker" track — mixing them back then doubles the background and
       // bleeds in sounds the user didn't select. The combined non-background stems ARE the
-      // isolated voices, so re-cutting them keeps each speaker track clean.
-      const voiceStems = stage.stems.filter((s) => s.id !== "background" && s.audioUrl);
+      // isolated voices, so re-cutting them keeps each speaker track clean. Both background variants
+      // (pure BGM + reaction) are excluded so neither leaks into the rebuilt voices.
+      const voiceStems = stage.stems.filter((s) => !isBackgroundStemId(s.id) && s.audioUrl);
       if (voiceStems.length === 0) throw new Error("No separated voice track to rebuild from.");
       const vocals =
         voiceStems.length === 1
@@ -399,14 +435,14 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
           await buildStemView(bytes, `spk-${sp.index}`, sp.label || defaultSpeakerLabel(sp.index), newStems.length === 0),
         );
       }
-      // Keep the original background stem — the script only re-cuts the speaker voices, the
-      // separated background music should still be available alongside them.
-      const background = stage.stems.find((s) => s.id === "background") ?? null;
-      const finalStems = background ? [...newStems, background] : newStems;
+      // Keep the original background stems — the script only re-cuts the speaker voices, the
+      // separated background tracks (pure BGM + reaction) should still be available alongside them.
+      const backgrounds = stage.stems.filter((s) => isBackgroundStemId(s.id));
+      const finalStems = [...newStems, ...backgrounds];
       setStage((prev) => {
         if (prev.kind !== "done") return prev;
         prev.stems.forEach((st) => {
-          if (st.id !== "background") revokeObjectUrl(st.audioUrl); // free superseded voice stems only
+          if (!isBackgroundStemId(st.id)) revokeObjectUrl(st.audioUrl); // free superseded voice stems only
         });
         revokeObjectUrl(prev.mix?.audioUrl);
         return { kind: "done", stems: finalStems, mix: null };
@@ -714,7 +750,7 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             activeId={activeId}
             onRequestActive={requestActive}
             onVolumeChange={(id, volume) => updateStem(id, { volume })}
-            onToggleSelected={(id, selected) => updateStem(id, { selected })}
+            onToggleSelected={(id, selected) => toggleStemSelected(id, selected)}
           />
         </div>
       )}

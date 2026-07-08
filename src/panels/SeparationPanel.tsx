@@ -7,7 +7,7 @@ import { FileCard, type FileEntry, type CardView } from "./FileCard";
 import { getBalance } from "../jobs/creditClient";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { BrandLockup } from "../brand/Logo";
-import { MAX_AUDIO_BYTES, BILLING_ENABLED } from "../config";
+import { MAX_AUDIO_BYTES, BILLING_ENABLED, SEPARATION_RETENTION_DAYS } from "../config";
 
 interface Props {
   onSignOut: () => void;
@@ -231,7 +231,13 @@ export function SeparationPanel({ onSignOut }: Props) {
       {openId == null && pickError && <p className="panel-error">{pickError}</p>}
 
       {openId == null && entries.length > 0 && (
-        <h2 className="file-list-title">Your files</h2>
+        <>
+          <h2 className="file-list-title">Your files</h2>
+          <p className="file-list-note">
+            Separations from the last {SEPARATION_RETENTION_DAYS} days in this project. Older results
+            are removed automatically and no longer appear here.
+          </p>
+        </>
       )}
 
       <ul className="file-cards">

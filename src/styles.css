@@ -588,6 +588,13 @@ button {
   color: #8a8a8a;
 }
 
+.file-list-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6f6f6f;
+}
+
 .file-card {
   display: flex;
   flex-direction: column;

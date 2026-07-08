@@ -37,12 +37,31 @@ export function isAutoSpeakerLabel(label: string | null | undefined): boolean {
   return !label || AUTO_LABEL_RE.test(label);
 }
 
+// True for either background variant — the pure BGM ("background") or the reaction-included one
+// ("background_reaction"). Voice-only operations (script re-cut, vocals mix) must exclude both so a
+// background track is never treated as a speaker.
+export function isBackgroundStemId(stemId: string): boolean {
+  return stemId === "background" || stemId === "background_reaction";
+}
+
+// Which stems start selected in the mix. First speaker + the reaction-free background make a
+// usable default mix; the reaction background is a mutually-exclusive alternative left off so at
+// most one background is ever selected. `orderIndex` is the stem's position among the shown stems.
+export function isDefaultSelectedStem(stemId: string, orderIndex: number): boolean {
+  if (stemId === "background") return true;
+  if (stemId === "background_reaction") return false;
+  return orderIndex === 0;
+}
+
 // Canonical English label for a separated stem, derived from its server stemId so the background
 // track and each voice read consistently regardless of how the backend named them, and so a stem
 // lines up with the same-numbered script speaker. An unknown id keeps a meaningful server label,
 // else falls back to the id itself.
 export function stemDisplayLabel(stemId: string, serverLabel?: string): string {
-  if (stemId === "background") return "Background";
+  // Two background variants ship side by side so the user can pick one (or mix both): the pure BGM
+  // and the one that keeps reactions (effects, ad-libs, non-primary speakers). Disambiguate both.
+  if (stemId === "background") return "Background (no reaction)";
+  if (stemId === "background_reaction") return "Background (with reaction)";
   // Server stems are 0-based ("speaker_0"), but the script numbers speakers from 1 — shift +1 so
   // "speaker_0" reads "Speaker 1" and matches the script.
   let m = /^speaker_(\d+)$/i.exec(stemId);
