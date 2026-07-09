@@ -541,6 +541,16 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   // opens a confirmation first; only "Delete" in that dialog actually removes.
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // UXP paints native <input>s (volume sliders, name/dialogue fields) ABOVE even a fixed modal, so
+  // their chrome bleeds through the confirmation dialog. While it's open, flag the document so a
+  // global rule drops those inputs — they're hidden behind the full-screen modal anyway, and return
+  // when it closes.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    document.body.classList.add("modal-open");
+    return () => document.body.classList.remove("modal-open");
+  }, [confirmDelete]);
+
   // Remove the card from the panel, and — if it corresponds to a saved separation — permanently
   // delete that record server-side so it doesn't reappear on the next sign-in. A fresh card that
   // never finished separating has no jobId, so there's nothing to delete.

@@ -335,7 +335,7 @@ button {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -438,6 +438,15 @@ button {
   background: #474747;
   outline: none;
 }
+/* UXP renders native form controls above everything — even a fixed modal — so their text/chrome
+   bleeds through the confirmation dialog. While a modal is open, fade every input to transparent
+   (opacity, NOT display:none — that would collapse the layout behind the dim backdrop and show a
+   jarring reflow). opacity:0 keeps the layout intact so the backdrop just dims it normally. */
+.modal-open input,
+.modal-open textarea {
+  opacity: 0 !important;
+}
+
 .confirm-btn--danger {
   color: #fff;
   background: #d9382f;
@@ -1954,11 +1963,8 @@ button {
 .seg-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
 /* Start time sits on its own line above; the speaker tag and the dialogue share the line below,
    vertically centered so they read at the same height. */
-.seg-row { position: relative; display: flex; flex-direction: column; margin-bottom: 8px; }
-/* While its speaker picker is open, lift the whole row above the rows below so the floating menu
-   paints over their dialogue instead of being covered by it. */
-.seg-row--picking { z-index: 30; }
-.seg-main { position: relative; display: flex; align-items: center; min-width: 0; }
+.seg-row { display: flex; flex-direction: column; margin-bottom: 8px; }
+.seg-main { display: flex; align-items: center; min-width: 0; }
 /* Tag column: every tag shares one width (set inline — sized to the longest speaker name, capped
    at 84px) so the dialogue always starts at the same x; the name is centered within it. The 84px
    here is the resting fallback before the inline width lands. */
@@ -1979,20 +1985,17 @@ button {
   text-overflow: ellipsis;
   cursor: pointer;
 }
-/* Speaker picker: floats as a popup pinned to the RIGHT of the tag at the same height (its `left`
-   is set inline to the tag width + gap), overlaying the dialogue rather than dropping down and
-   pushing lines apart. `top: 0` keeps it level with the tag. The open row is lifted (.seg-row--picking)
-   so this paints over the lines below. Tap the tag → choose a speaker → assigns and closes. */
+/* Speaker picker: opens in-flow under the tag (drops down, pushing the lines below). Floating it over
+   the dialogue is impossible in UXP — native <input>s always paint above any overlay — so it lives in
+   normal flow. Tap the tag → choose a speaker → it assigns and closes. */
 .seg-spk-menu {
-  position: absolute;
-  top: 0;
-  z-index: 20;
+  align-self: flex-start;
+  margin: 6px 0 2px;
   padding: 4px;
   min-width: 150px;
   background: #2c2c2c;
   border: 1px solid #4a4a4a;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 .seg-spk-option {
   display: flex;
@@ -2048,11 +2051,6 @@ button {
 .seg-text-input:hover { background: var(--spectrum-global-color-gray-100, #2a2a2a); border-radius: 3px; }
 .seg-text-input:focus {
   outline: none;
-}
-/* Hidden while the speaker picker overlaps this line: UXP paints native <input>s above the floating
-   menu, so the covered dialogue is hidden for the moment the menu is open, then restored. */
-.seg-text-input--covered {
-  visibility: hidden;
 }
 
 .mix-output-name-input {
