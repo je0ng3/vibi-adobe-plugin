@@ -171,9 +171,14 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   // the bytes in a registry so playback/preview/import never depend on fetch(objectURL) — which
   // is unverified in UXP (KNOWN_ISSUES) — see audio/audioUrl.ts.
   const objectUrls = useRef<Set<string>>(new Set());
+  // True once the card is genuinely unmounted (removed from the panel), NOT when it merely
+  // collapses. A background restore checks this — not a per-effect flag — so navigating to
+  // "All files" no longer aborts an in-flight download.
+  const unmountedRef = useRef(false);
   useEffect(() => {
     const urls = objectUrls.current;
     return () => {
+      unmountedRef.current = true;
       urls.forEach((u) => revokeAudioUrl(u));
       urls.clear();
     };
@@ -214,63 +219,65 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   }
 
   // Rehydrate a history-restored card on first expand: fetch the saved stems from the server
-  // (R2-backed, egress-free) and jump straight to the "done" view — peaks, playback, mix, import
-  // all work off the in-memory registry as usual. Gated on `collapsed` so the network/memory cost
-  // is only paid for cards the user opens, and run-once via the ref so re-expanding doesn't refetch.
+  // (R2-backed, egress-free) into the "done" view — peaks, playback, mix, import all work off the
+  // in-memory registry as usual. Started lazily on first open, so a panel with many saved cards
+  // doesn't pull every stem's (multi-MB WAV) bytes at once — but once started it runs to COMPLETION
+  // in the background. Navigating back to "All files" used to cancel the in-flight download and
+  // discard it, forcing a full re-fetch (or a re-separation) on reopen — that was the "restoring
+  // stops when I leave / re-separating is faster" symptom. Stems also render progressively as each
+  // finishes downloading, so the first one is usable immediately instead of blocking on the largest.
   const restoreStartedRef = useRef(false);
   useEffect(() => {
     if (!entry.restored || collapsed || restoreStartedRef.current) return;
     restoreStartedRef.current = true;
     const restored = entry.restored;
-    let cancelled = false;
-    let finished = false;
-    (async () => {
-      setDurationSec(restored.durationSec);
-      setSeparationJobId(restored.jobId);
+    setDurationSec(restored.durationSec);
+    setSeparationJobId(restored.jobId);
+    void (async () => {
+      // Keep the progressively-arriving stems in their saved order so the list doesn't reshuffle as
+      // downloads land out of order.
+      const collected: Array<{ idx: number; view: StemView }> = [];
+      const errors: unknown[] = [];
+      const commit = () => {
+        if (unmountedRef.current) return;
+        const stems = collected.slice().sort((a, b) => a.idx - b.idx).map((c) => c.view);
+        setStage((prev) => ({ kind: "done", stems, mix: prev.kind === "done" ? prev.mix : null }));
+      };
       // Restore each stem independently — one expired/missing stem (e.g. a best-effort background
-      // that never uploaded, or a partially GC'd result) shouldn't sink the whole card. Rebuild from
-      // whatever survives and only fail if every stem is gone.
-      const settled = await Promise.allSettled(
-        restored.stems.map(async (m, idx): Promise<StemView | null> => {
-          const bytes = await fetchStem(restored.jobId, m.stemId);
-          if (cancelled) return null;
-          return buildStemView(bytes, m.stemId, stemDisplayLabel(m.stemId, m.label), isDefaultSelectedStem(m.stemId, idx));
+      // that never uploaded, or a partially GC'd result) shouldn't sink the whole card.
+      await Promise.all(
+        restored.stems.map(async (m, idx) => {
+          try {
+            const bytes = await fetchStem(restored.jobId, m.stemId);
+            if (unmountedRef.current) return;
+            const view = await buildStemView(
+              bytes,
+              m.stemId,
+              stemDisplayLabel(m.stemId, m.label),
+              isDefaultSelectedStem(m.stemId, idx),
+            );
+            if (unmountedRef.current) {
+              revokeObjectUrl(view.audioUrl); // unmounted mid-build — free the handle we just minted
+              return;
+            }
+            collected.push({ idx, view });
+            commit(); // reveal this stem now — don't wait on the others
+          } catch (e) {
+            errors.push(e);
+          }
         }),
       );
-      if (cancelled) {
-        // Collapsed mid-fetch: free any handles we did mint before bailing.
-        settled.forEach((r) => {
-          if (r.status === "fulfilled") revokeObjectUrl(r.value?.audioUrl);
-        });
+      if (unmountedRef.current) return;
+      if (collected.length === 0) {
+        // Nothing survived — the saved result is genuinely gone.
+        console.warn("[history] restore failed:", errors[0]);
+        setStage({ kind: "error", message: "Couldn't restore this saved result — it may have expired." });
         return;
       }
-      const stems = settled
-        .filter((r): r is PromiseFulfilledResult<StemView | null> => r.status === "fulfilled")
-        .map((r) => r.value)
-        .filter((s): s is StemView => s !== null);
-      const failed = settled.length - stems.length;
-      if (stems.length === 0) {
-        // Nothing survived — the saved result is genuinely gone. Surface the first real error.
-        const firstErr = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-        throw firstErr?.reason ?? new Error("no stems could be restored");
+      if (errors.length > 0) {
+        console.warn(`[history] restored ${collected.length}/${restored.stems.length} stem(s); ${errors.length} unavailable`);
       }
-      if (failed > 0) {
-        console.warn(`[history] restored ${stems.length}/${restored.stems.length} stem(s); ${failed} unavailable`);
-      }
-      setStage({ kind: "done", stems, mix: null });
-      finished = true;
-    })().catch((e) => {
-      finished = true;
-      if (cancelled) return;
-      console.warn("[history] restore failed:", e);
-      setStage({ kind: "error", message: "Couldn't restore this saved result — it may have expired." });
-    });
-    return () => {
-      cancelled = true;
-      // Collapsed again before the fetch finished — allow a later expand to retry instead of
-      // leaving the card stuck on "Restoring…".
-      if (!finished) restoreStartedRef.current = false;
-    };
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry.id, collapsed]);
 
