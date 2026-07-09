@@ -589,48 +589,8 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   );
 
   return (
+    <>
     <div className={`file-card file-card--${view}`}>
-      {confirmDelete && (
-        <div className="modal-backdrop" onClick={() => setConfirmDelete(false)}>
-          <div className="modal-card confirm-card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">Delete this file?</h3>
-            <p className="modal-sub">
-              “{meta.fileName}” and its separation result will be permanently removed. This can’t be
-              undone.
-            </p>
-            <div className="confirm-actions">
-              <div
-                className="confirm-btn"
-                role="button"
-                tabIndex={0}
-                onClick={() => setConfirmDelete(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setConfirmDelete(false);
-                  }
-                }}
-              >
-                Cancel
-              </div>
-              <div
-                className="confirm-btn confirm-btn--danger"
-                role="button"
-                tabIndex={0}
-                onClick={confirmRemove}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    confirmRemove();
-                  }
-                }}
-              >
-                Delete
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {view === "detail" && (
         <div className="file-card-detail-top">
           <div
@@ -824,6 +784,50 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
         </div>
       )}
     </div>
+    {/* Rendered as a sibling of .file-card (not a child) so it doesn't trip the
+        `.file-card > * + *` sibling-margin rule and nudge the card's content down when it opens. */}
+    {confirmDelete && (
+      <div className="modal-backdrop" onClick={() => setConfirmDelete(false)}>
+        <div className="modal-card confirm-card" onClick={(e) => e.stopPropagation()}>
+          <h3 className="modal-title">Delete this file?</h3>
+          <p className="modal-sub">
+            “{meta.fileName}” and its separation result will be permanently removed. This can’t be
+            undone.
+          </p>
+          <div className="confirm-actions">
+            <div
+              className="confirm-btn"
+              role="button"
+              tabIndex={0}
+              onClick={() => setConfirmDelete(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setConfirmDelete(false);
+                }
+              }}
+            >
+              Cancel
+            </div>
+            <div
+              className="confirm-btn confirm-btn--danger"
+              role="button"
+              tabIndex={0}
+              onClick={confirmRemove}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  confirmRemove();
+                }
+              }}
+            >
+              Delete
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

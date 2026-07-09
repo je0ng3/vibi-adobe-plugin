@@ -63,8 +63,9 @@ function parseTimeToMs(input: string): number | null {
 // (No <select>/<textarea> — UXP doesn't render those reliably; plain <input> is fine.)
 export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
   const canRemove = draft.speakers.length > 1;
-  // Which line's start time is being edited, and the typed value. Local UI state.
+  // Which line's time is being edited, which end of it (start/end), and the typed value. Local UI state.
   const [editTimeId, setEditTimeId] = useState<string | null>(null);
+  const [editTimeKind, setEditTimeKind] = useState<"start" | "end">("start");
   const [timeInput, setTimeInput] = useState("");
   // Which line's speaker picker is open (tap the tag → list of speakers → choose).
   const [pickerSegId, setPickerSegId] = useState<string | null>(null);
@@ -183,30 +184,42 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
     }
   }
 
-  function openTime(seg: TranscriptSegment) {
-    setTimeInput(formatMs(seg.startMs));
+  function openTime(seg: TranscriptSegment, kind: "start" | "end") {
+    setTimeInput(formatMs(kind === "start" ? seg.startMs : seg.endMs));
+    setEditTimeKind(kind);
     setEditTimeId(seg.id);
   }
 
-  // Commit an edited start time. The start of a line is the boundary it shares with the line above,
-  // so moving it drags the previous line's end with it (clamped inside both lines).
+  // Commit an edited time. Only THIS line moves — a neighbour's used time is a hard wall, never
+  // dragged along, so a line can only be resized within the room it actually has:
+  //   • start ∈ [previous line's end … this line's end − 1]  (0 if it's the first line)
+  //   • end   ∈ [this line's start + 1 … next line's start]  (open above if it's the last line)
+  // Values outside that range clamp to the nearest edge, so you can never overlap an adjacent line.
   function commitTime(seg: TranscriptSegment) {
     const atMs = parseTimeToMs(timeInput);
+    const kind = editTimeKind;
     setEditTimeId(null);
     if (atMs === null) return;
     const idx = draft.segments.findIndex((s) => s.id === seg.id);
-    const prev = idx > 0 ? draft.segments[idx - 1] : null;
-    const lower = prev ? prev.startMs + 1 : 0;
-    const upper = seg.endMs - 1;
-    const clamped = Math.min(Math.max(atMs, lower), upper);
-    onChange({
-      ...draft,
-      segments: draft.segments.map((s) => {
-        if (s.id === seg.id) return { ...s, startMs: clamped };
-        if (prev && s.id === prev.id) return { ...s, endMs: clamped };
-        return s;
-      }),
-    });
+    if (kind === "start") {
+      const prev = idx > 0 ? draft.segments[idx - 1] : null;
+      const lower = prev ? prev.endMs : 0;
+      const upper = seg.endMs - 1;
+      const clamped = Math.min(Math.max(atMs, lower), upper);
+      onChange({
+        ...draft,
+        segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, startMs: clamped } : s)),
+      });
+    } else {
+      const next = idx < draft.segments.length - 1 ? draft.segments[idx + 1] : null;
+      const lower = seg.startMs + 1;
+      const upper = next ? next.startMs : Number.MAX_SAFE_INTEGER;
+      const clamped = Math.min(Math.max(atMs, lower), upper);
+      onChange({
+        ...draft,
+        segments: draft.segments.map((s) => (s.id === seg.id ? { ...s, endMs: clamped } : s)),
+      });
+    }
   }
 
   const countFor = (index: number) => draft.segments.filter((s) => s.speakerIndex === index).length;
@@ -280,31 +293,59 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
       <ul className="seg-list">
         {draft.segments.map((seg, segIdx) => (
           <li className={`seg-row${pickerSegId === seg.id ? " seg-row--picking" : ""}`} key={seg.id}>
-            {editTimeId === seg.id ? (
-              <input
-                className="seg-time-input"
-                type="text"
-                value={timeInput}
-                placeholder="mm:ss"
-                autoFocus
-                onChange={(e) => setTimeInput(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitTime(seg);
-                  else if (e.key === "Escape") setEditTimeId(null);
-                }}
-                onBlur={() => commitTime(seg)}
-              />
-            ) : (
-              <span
-                className="seg-time"
-                role="button"
-                tabIndex={0}
-                title="Tap to adjust the start time"
-                onClick={() => openTime(seg)}
-              >
-                {formatMs(seg.startMs)}
-              </span>
-            )}
+            <span className="seg-time">
+              {editTimeId === seg.id && editTimeKind === "start" ? (
+                <input
+                  className="seg-time-input"
+                  type="text"
+                  value={timeInput}
+                  placeholder="mm:ss"
+                  autoFocus
+                  onChange={(e) => setTimeInput(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitTime(seg);
+                    else if (e.key === "Escape") setEditTimeId(null);
+                  }}
+                  onBlur={() => commitTime(seg)}
+                />
+              ) : (
+                <span
+                  className="seg-time-part"
+                  role="button"
+                  tabIndex={0}
+                  title="Tap to adjust the start time"
+                  onClick={() => openTime(seg, "start")}
+                >
+                  {formatMs(seg.startMs)}
+                </span>
+              )}
+              <span className="seg-time-sep"> – </span>
+              {editTimeId === seg.id && editTimeKind === "end" ? (
+                <input
+                  className="seg-time-input"
+                  type="text"
+                  value={timeInput}
+                  placeholder="mm:ss"
+                  autoFocus
+                  onChange={(e) => setTimeInput(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitTime(seg);
+                    else if (e.key === "Escape") setEditTimeId(null);
+                  }}
+                  onBlur={() => commitTime(seg)}
+                />
+              ) : (
+                <span
+                  className="seg-time-part"
+                  role="button"
+                  tabIndex={0}
+                  title="Tap to adjust the end time"
+                  onClick={() => openTime(seg, "end")}
+                >
+                  {formatMs(seg.endMs)}
+                </span>
+              )}
+            </span>
             <div className="seg-main">
               <div
                 className="seg-tag"
