@@ -10,10 +10,10 @@ interface Props {
   onRegenerate: () => void;
 }
 
-// Per-speaker colors — primary/success from the design system plus an amber to keep three hues
-// distinct (danger red is avoided to dodge its error semantics). A speaker reads the same color in
-// the list and in every line tag; past the third speaker the palette wraps.
-const SPEAKER_COLORS = ["#644AFF", "#0BC673", "#F0A93D"];
+// Per-speaker colors — a bright green / blue / pink trio at matched saturation. They're light enough
+// that the tag text is dark (see .seg-tag) rather than white to stay legible. A speaker reads the same
+// color in the list and in every line tag; past the third speaker the palette wraps.
+const SPEAKER_COLORS = ["#44C68A", "#4FA8FF", "#F06A8A"];
 const colorFor = (index: number) => SPEAKER_COLORS[Math.abs(index) % SPEAKER_COLORS.length];
 
 // The speaker tags all share one width — sized to fit the *longest* speaker name so every tag is
@@ -210,8 +210,16 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
   }
 
   const countFor = (index: number) => draft.segments.filter((s) => s.speakerIndex === index).length;
-  const displayLabel = (sp: Speaker) => 
+  const displayLabel = (sp: Speaker) =>
     sp.label?.trim() ? sp.label : defaultSpeakerLabel(sp.index);
+
+  // UXP renders <input> in a native layer that paints ABOVE absolutely-positioned HTML (cf. the
+  // .seg-text-input backdrop note), so no z-index lets the floating speaker menu cover the dialogue.
+  // Instead, while the menu is open we hide the dialogue inputs it overlaps — the picker's own row
+  // plus roughly one row per menu item below it (the menu is ~one row tall per speaker).
+  const pickerIdx = pickerSegId ? draft.segments.findIndex((s) => s.id === pickerSegId) : -1;
+  const isCoveredByPicker = (idx: number) =>
+    pickerIdx >= 0 && idx >= pickerIdx && idx <= pickerIdx + draft.speakers.length;
 
   return (
     <div className="script-editor">
@@ -270,8 +278,8 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
         Tap a line to edit · Enter mid-line to split · ⌫ at the start to merge up · tap the time to fine-tune
       </p>
       <ul className="seg-list">
-        {draft.segments.map((seg) => (
-          <li className="seg-row" key={seg.id}>
+        {draft.segments.map((seg, segIdx) => (
+          <li className={`seg-row${pickerSegId === seg.id ? " seg-row--picking" : ""}`} key={seg.id}>
             {editTimeId === seg.id ? (
               <input
                 className="seg-time-input"
@@ -317,7 +325,7 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 {displayLabel(draft.speakers.find((sp) => sp.index === seg.speakerIndex) ?? { index: seg.speakerIndex, label: "" })}
               </div>
               <input
-                className="seg-text-input"
+                className={`seg-text-input${isCoveredByPicker(segIdx) ? " seg-text-input--covered" : ""}`}
                 type="text"
                 ref={(el) => {
                   if (el) inputRefs.current[seg.id] = el;
@@ -348,31 +356,36 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                   onTextKeyDown(e, seg);
                 }}
               />
+              {pickerSegId === seg.id && (
+                <div
+                  className="seg-spk-menu"
+                  role="listbox"
+                  aria-label="Choose speaker"
+                  style={{ left: tagWidth + 8 }}
+                >
+                  {draft.speakers.map((sp) => (
+                    <div
+                      key={sp.index}
+                      className="seg-spk-option"
+                      role="option"
+                      aria-selected={sp.index === seg.speakerIndex}
+                      tabIndex={0}
+                      onClick={() => assignSpeaker(seg, sp.index)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          assignSpeaker(seg, sp.index);
+                        }
+                      }}
+                    >
+                      <span className="seg-spk-dot" style={{ background: colorFor(sp.index) }} aria-hidden />
+                      <span className="seg-spk-label">{sp.label || defaultSpeakerLabel(sp.index)}</span>
+                      {sp.index === seg.speakerIndex && <span className="seg-spk-check" aria-hidden>✓</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {pickerSegId === seg.id && (
-              <div className="seg-spk-menu" role="listbox" aria-label="Choose speaker">
-                {draft.speakers.map((sp) => (
-                  <div
-                    key={sp.index}
-                    className="seg-spk-option"
-                    role="option"
-                    aria-selected={sp.index === seg.speakerIndex}
-                    tabIndex={0}
-                    onClick={() => assignSpeaker(seg, sp.index)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        assignSpeaker(seg, sp.index);
-                      }
-                    }}
-                  >
-                    <span className="seg-spk-dot" style={{ background: colorFor(sp.index) }} aria-hidden />
-                    <span className="seg-spk-label">{sp.label || defaultSpeakerLabel(sp.index)}</span>
-                    {sp.index === seg.speakerIndex && <span className="seg-spk-check" aria-hidden>✓</span>}
-                  </div>
-                ))}
-              </div>
-            )}
           </li>
         ))}
       </ul>

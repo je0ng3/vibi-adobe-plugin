@@ -7,6 +7,11 @@ import { formatClock } from "../audio/format";
 
 interface Props {
   stem: StemView;
+  // Short label shown in the card (e.g. "1", "No reaction"); the full name lives in `stem.label`
+  // and surfaces via the hover tooltip. Playback/aria/filenames keep using the full `stem.label`.
+  displayLabel: string;
+  // Shared label-column width (px) so every card's name lines up (centered within it).
+  labelWidth: number;
   // Globally-unique per card (entry.id). The playback backend is a single global singleton keyed by
   // the play id, but stem ids ("vocals"/"background"/…) repeat across cards — so the id we hand the
   // backend must be namespaced by the card, or one file's stem plays/steals another's.
@@ -22,6 +27,8 @@ const canPlay = playbackSupported();
 
 export function StemCard({
   stem,
+  displayLabel,
+  labelWidth,
   cardKey,
   audioUrl,
   isActive,
@@ -148,43 +155,70 @@ export function StemCard({
     }
   }
 
+  // Clicking anywhere on the card toggles whether the stem is in the mix; the play button,
+  // waveform, and volume control stop propagation so their own interactions don't also toggle.
+  function toggleSelected() {
+    onToggleSelected(!stem.selected);
+  }
+
   return (
-    <li className={`stem-card${stem.selected ? " stem-card--selected" : ""}`}>
-      <div className="stem-card-top">
-        {audioUrl && (
-          <div
-            className="stem-play"
-            role="button"
-            tabIndex={0}
-            aria-label={canPlay && isActive && !paused ? `Pause ${stem.label}` : `Play ${stem.label}`}
-            onClick={preview}
-          >
-            {canPlay && isActive && !paused ? "❚❚" : "▶"}
+    <li
+      className={`stem-card${stem.selected ? " stem-card--selected" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={stem.selected}
+      aria-label={`${stem.label}${stem.selected ? " (in mix)" : ""}`}
+      onClick={toggleSelected}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleSelected();
+        }
+      }}
+    >
+      <div className="stem-card-content">
+        <div className="stem-card-header">
+          <span className="stem-card-label" style={{ width: labelWidth }} title={stem.label}>
+            {displayLabel}
+          </span>
+          {/* Seeking is its own interaction — don't let a waveform click also toggle selection. */}
+          <div className="stem-card-wave" onClick={(e) => e.stopPropagation()}>
+            <Waveform
+              peaks={stem.peaks}
+              selected={stem.selected}
+              volume={stem.volume}
+              progress={progress}
+              onSeek={seekRatio}
+            />
           </div>
-        )}
+        </div>
 
-        <div className="stem-card-content">
-          <div className="stem-card-header">
-            <span className="stem-card-label">{stem.label}</span>
-            <div className="stem-card-wave">
-              <Waveform
-                peaks={stem.peaks}
-                selected={stem.selected}
-                volume={stem.volume}
-                progress={progress}
-                onSeek={seekRatio}
-              />
-            </div>
-          </div>
-
-          <div className="stem-card-footer">
+        <div className="stem-card-footer">
+          {/* Transport — play + time grouped as one unit on the left. */}
+          <div className="stem-card-transport">
+            {audioUrl && (
+              <div
+                className={`stem-play${canPlay && isActive && !paused ? " stem-play--active" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-label={canPlay && isActive && !paused ? `Pause ${stem.label}` : `Play ${stem.label}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  preview();
+                }}
+              >
+                {canPlay && isActive && !paused ? "❚❚" : "▶"}
+              </div>
+            )}
             <span className="preview-time">
               {formatClock(isActive ? currentTime : 0)} / {" "}
               {formatClock(stem.durationSec)}
             </span>
+          </div>
 
-            <div className="stem-card-actions"> 
-              <div className="volume-control"> 
+          <div className="stem-card-actions">
+            {/* Volume is its own control — clicks here adjust volume, they don't toggle selection. */}
+            <div className="volume-control" onClick={(e) => e.stopPropagation()}>
                 <div
                   className="volume-button"
                   role="button"
@@ -236,18 +270,9 @@ export function StemCard({
                   </div>
                 )}
               </div>
-              <label className="stem-card-check">
-                <input
-                  type="checkbox"
-                  checked={stem.selected}
-                  onChange={(e) => onToggleSelected(e.currentTarget.checked)}
-                  aria-label={`Select ${stem.label}`}
-                />
-              </label>
             </div>
           </div>
         </div>
-      </div>
     </li>
   );
 }

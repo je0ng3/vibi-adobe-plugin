@@ -43,7 +43,7 @@ button {
 .panel {
   display: flex;
   flex-direction: column;
-  padding: 14px;
+  padding: 18px;
 }
 
 .panel h2 {
@@ -66,7 +66,19 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 6px;
+  /* Fixed border-box height shared with .file-card-detail-top so the header content sits at the exact
+     same Y in both the list header and an open file's "All files" header — no jump on navigation. */
+  box-sizing: border-box;
+  height: 42px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  /* Black divider under the header, splitting it off as its own section (solid single-side border
+     renders in UXP; dashed does not). Negative side margins cancel the panel's 18px padding so the
+     line runs edge to edge, while matching side padding keeps the logo/credits aligned. */
+  margin-left: -18px;
+  margin-right: -18px;
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .panel-header-right {
@@ -176,10 +188,10 @@ button {
 
 .login-btn--primary {
   color: #ffffff;
-  background: #2680eb;
+  background: #5E5CE6;
 }
 .login-btn--primary:hover {
-  background: #378ef0;
+  background: #7674EC;
 }
 
 .login-btn--secondary {
@@ -234,7 +246,7 @@ button {
   text-align: center;
   font-size: 13px;
   font-weight: 600;
-  color: #6db0ff;
+  color: #A5A3F0;
 }
 
 /* Benign re-auth prompt ("session expired") — neutral, not alarm-red. */
@@ -289,7 +301,7 @@ button {
   font-weight: 600;
   line-height: 1;
   color: #f4f4f4;
-  background: #2680eb;
+  background: #5E5CE6;
 }
 
 .credit-badge--button {
@@ -311,12 +323,18 @@ button {
 }
 
 .credit-badge--button:hover {
-  background: #378ef0;
+  background: #7674EC;
 }
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  /* Explicit edges + size rather than `inset: 0`: UXP's Chromium can ignore the `inset` shorthand,
+     which would leave the backdrop auto-sized at its in-flow spot (so a modal rendered deep in a card
+     wouldn't centre in the panel). Full-viewport cover guarantees the flex centring lands mid-panel. */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
@@ -370,7 +388,7 @@ button {
 }
 
 .pack-row:hover:not(:disabled) {
-  border-color: #2680eb;
+  border-color: #5E5CE6;
 }
 
 .pack-row:disabled {
@@ -393,6 +411,40 @@ button {
   font-size: 11px;
   color: #808080;
   text-align: center;
+}
+
+/* Delete-confirmation dialog: reuses .modal-backdrop/.modal-card; a Cancel + destructive Delete pair
+   aligned to the right. Buttons are <div role="button"> (sp-button renders as a grey pill in UXP). */
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 18px;
+}
+.confirm-actions > * + * {
+  margin-left: 8px;
+}
+.confirm-btn {
+  padding: 7px 15px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e4e4e4;
+  background: #3a3a3a;
+  cursor: pointer;
+}
+.confirm-btn:hover,
+.confirm-btn:focus {
+  background: #474747;
+  outline: none;
+}
+.confirm-btn--danger {
+  color: #fff;
+  background: #d9382f;
+}
+.confirm-btn--danger:hover,
+.confirm-btn--danger:focus {
+  background: #e8483f;
 }
 
 /* Three audio sources as divided cells, not buttons: File fills the tall left column; Project (top)
@@ -581,7 +633,7 @@ button {
 /* Section label above the file list (only rendered when there are files). */
 .file-list-title {
   margin: 12px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -589,7 +641,7 @@ button {
 }
 
 .file-list-note {
-  margin: 4px 0 0;
+  margin: 1px 0 0;
   font-size: 11px;
   line-height: 1.4;
   color: #6f6f6f;
@@ -642,7 +694,7 @@ button {
 
 .file-card-open:focus {
   background: #2c2c2c;
-  border-color: #2680eb;
+  border-color: #5E5CE6;
 }
 
 .file-card-chevron {
@@ -660,12 +712,24 @@ button {
   top: -1px;
 }
 
-/* Back-to-list button atop an open file's tab. */
-/* Detail top bar: back link on the left, delete button on the right, same line. */
+/* Back-to-list bar atop an open file's tab — styled as the detail view's header: the "All files"
+   link sits on its own line with a full-bleed black divider below it, mirroring the panel header on
+   the list view. Negative side margins cancel the panel's 18px padding so the line runs edge to
+   edge; matching side padding keeps the link aligned with the content. */
 .file-card-detail-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Same fixed height as .panel-header, and a -6px top margin cancelling .file-cards' 6px top offset,
+     so this "All files" header lines up exactly where the list header sits — no shift on navigation. */
+  box-sizing: border-box;
+  height: 42px;
+  margin-top: -6px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  margin-left: -18px;
+  margin-right: -18px;
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .file-card-back {
@@ -673,9 +737,9 @@ button {
   align-items: center;
   background: transparent;
   border: none;
-  color: #6db0ff;
+  color: #5E5CE6;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1;
   padding: 4px 4px 4px 0;
@@ -683,8 +747,8 @@ button {
 }
 
 .file-card-back-arrow {
-  margin-right: 4px;
-  font-size: 16px;
+  margin-right: 5px;
+  font-size: 20px;
   line-height: 1;
   /* nudge the glyph up to sit on the text's optical centre */
   position: relative;
@@ -693,12 +757,14 @@ button {
 
 .file-card-back:hover,
 .file-card-back:focus {
-  color: #8fc4ff;
+  color: #7674EC;
 }
 
-/* Trash icon on the detail top bar — muted; on hover it brightens to the same highlight the file
-   list uses (#e4e4e4), not red. Nudged left of the right edge with a right margin. */
+/* Trash icon on the file-title row (detail view) — muted; on hover it brightens to the same
+   highlight the file list uses (#e4e4e4), not red. Sits at the right end of the title line, its own
+   6px padding providing the inset from the content edge. */
 .file-card-delete {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -708,7 +774,6 @@ button {
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 4px;
-  margin-right: 8px;
 }
 
 .file-card-delete:hover,
@@ -821,10 +886,14 @@ button {
 .range-selector-clear:hover { background: #3a3a3a; color: #f4f4f4; }
 
 .waveform-selection {
-  fill: rgba(38, 128, 235, 0.22);
-  stroke: #2680eb;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 2;
+  background: rgba(94, 92, 230, 0.22);
+  border-left: 1px solid #5E5CE6;
+  border-right: 1px solid #5E5CE6;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
@@ -852,7 +921,7 @@ button {
 
 .job-multi-option input[type="checkbox"] {
   margin: 0;
-  accent-color: #2680eb;
+  accent-color: #5E5CE6;
   width: 14px;
   height: 14px;
 }
@@ -866,7 +935,7 @@ button {
   display: flex;
   flex-direction: column;
   padding: 6px 8px 6px 24px;
-  border-left: 2px solid #2680eb;
+  border-left: 2px solid #5E5CE6;
   margin-left: 6px;
 }
 
@@ -893,8 +962,8 @@ button {
   border-radius: 10px;
 }
 
-.job-lang-chip:hover:not(:disabled) { border-color: #2680eb; color: #f4f4f4; }
-.job-lang-chip--on { background: #2680eb; border-color: #2680eb; color: white; }
+.job-lang-chip:hover:not(:disabled) { border-color: #5E5CE6; color: #f4f4f4; }
+.job-lang-chip--on { background: #5E5CE6; border-color: #5E5CE6; color: white; }
 .job-lang-chip--on:hover:not(:disabled) { color: white; }
 .job-lang-chip:disabled { opacity: 0.45; cursor: default; }
 
@@ -908,7 +977,7 @@ button {
   max-width: 200px;
 }
 
-.job-lang-select:focus { outline: none; border-color: #2680eb; }
+.job-lang-select:focus { outline: none; border-color: #5E5CE6; }
 
 .job-lang-hint {
   margin: 0;
@@ -956,7 +1025,7 @@ button {
   justify-content: space-between;
   padding: 8px 10px;
   background: #232a36;
-  border: 1px solid #2680eb;
+  border: 1px solid #5E5CE6;
   border-radius: 5px;
 }
 
@@ -1165,7 +1234,7 @@ button {
   border-radius: 3px;
 }
 
-.speaker-map-add:hover { background: #3a3a3a; color: #f4f4f4; border-color: #2680eb; }
+.speaker-map-add:hover { background: #3a3a3a; color: #f4f4f4; border-color: #5E5CE6; }
 
 .speaker-map-list {
   list-style: none;
@@ -1226,7 +1295,7 @@ button {
 
 .speaker-map-input:focus {
   outline: none;
-  border-color: #2680eb;
+  border-color: #5E5CE6;
 }
 
 .transcript-list {
@@ -1285,7 +1354,39 @@ button {
 
 .transcript-segment-text:focus {
   outline: none;
-  border-color: #2680eb;
+  border-color: #5E5CE6;
+}
+
+.stem-groups {
+  display: flex;
+  flex-direction: column;
+}
+
+/* UXP flex `gap` is unreliable — space groups with margin instead. */
+.stem-groups > * + * { margin-top: 10px; }
+
+.stem-group-title {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9a9a9a;
+  margin-bottom: 6px;
+}
+
+/* Hairline rule filling the space between the group name and its count. */
+.stem-group-rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 8px;
+  background: #363636;
+}
+
+.stem-group-count {
+  color: #6f7075;
+  font-variant-numeric: tabular-nums;
 }
 
 .stem-cards {
@@ -1297,20 +1398,51 @@ button {
 }
 
 .stem-card {
-  background: #2c2c2c;
-  border: 1px solid #3a3a3a;
+  position: relative;
+  /* Base surface sits close to the panel so an unselected (dimmed) card recedes to a faint outline
+     rather than a solid box; the selected state below lifts the chosen ones forward. */
+  background: #262626;
+  border: 1px solid #313131;
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  padding: 6px 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  /* Whether a stem is in the mix is shown two ways: unselected cards are dimmed, and the selected
+     ones get a positive accent cue (tint + left bar) — not just a brightness difference. Click
+     anywhere on a card (but the play/waveform/volume controls) to toggle. */
+  opacity: 0.34;
+  transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
 .stem-card--selected {
-  border-color: #2680eb;
-  box-shadow: inset 0 0 0 1px #2680eb;
+  opacity: 1;
+  background: rgba(94, 92, 230, 0.06);
+  border-color: rgba(94, 92, 230, 0.38);
 }
 
-.stem-card-top {
+/* Accent bar on the selected card's left edge — the "in mix" marker. */
+.stem-card--selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #5E5CE6;
+}
+
+/* Hovering an unselected card brightens it partway as a "click to add" hint (selected stays full). */
+.stem-card:hover {
+  opacity: 0.75;
+}
+.stem-card--selected:hover {
+  opacity: 1;
+}
+
+/* Transport = play + time, grouped on the footer's left. */
+.stem-card-transport {
   display: flex;
   align-items: center;
 }
@@ -1321,42 +1453,36 @@ button {
   color: #e4e4e4;
   cursor: pointer;
   font-size: 10px;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: 50%;
   padding: 0;
   flex-shrink: 0;
 }
 
 .stem-play:hover { background: #4a4a4a; }
 
+/* While this stem is actively playing, the transport button fills with the accent so "playing" reads
+   at a glance (and pausing drops it back to the plain state). */
+.stem-play--active,
+.stem-play--active:hover { background: #5E5CE6; color: #fff; }
+
 .stem-card-label {
   font-size: 11px;
   font-weight: 500;
   color: #f4f4f4;
-  min-width: 56px;
+  /* Width is set inline (StemListView) — one shared value sized to the longest name across both
+     groups so every label lines up, capped here so a very long custom name ellipsizes and reveals
+     in full via the `title` tooltip. */
   max-width: 78px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.stem-card-check {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.stem-card-check input[type="checkbox"] {
-  margin: 0;
-  accent-color: #2680eb;
-  width: 14px;
-  height: 14px;
+  text-align: center;
 }
 
 .stem-card-wave {
@@ -1368,7 +1494,7 @@ button {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .stem-card-header {
@@ -1459,7 +1585,8 @@ button {
   bottom: 0;
   width: 100%;
   border-radius: 3px;
-  background: #644aff;
+  /* One accent across the panel — same Spectrum blue as the waveform and selection cue. */
+  background: #5E5CE6;
 }
 
 .volume-slider-thumb {
@@ -1500,35 +1627,56 @@ button {
 }
 
 .waveform {
+  position: relative;
   display: block;
   width: 100%;
-  height: 28px;
+  height: 30px;
+  overflow: hidden;
+}
+
+/* Bars are HTML divs (not SVG) so border-radius gives true pill caps without the aspect-ratio
+   squashing an SVG would suffer at this wide-but-short size. The flex row centers them
+   vertically; per-bar height is set inline in JS. Gaps use percentage margins (relative to the
+   container width) so the spacing stays proportional at any panel width — UXP flexbox `gap` is
+   unreliable. */
+.waveform-bars {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
 }
 
 .waveform .waveform-bar {
-  fill: #8a8a8a;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0 0.3%;
+  border-radius: 2px; /* softly rounded ends — a big radius renders as a pointed lens in UXP */
+  background: #8a8a8a;
 }
 
 .waveform--selected .waveform-bar {
-  fill: #2680eb;
-}
-
-.waveform .waveform-bar--played {
-  fill: #f4f4f4;
-}
-
-.waveform--selected .waveform-bar--played {
-  fill: #6db0ff;
+  background: #5E5CE6;
 }
 
 .waveform-progress-fill {
-  fill: rgba(38, 128, 235, 0.12);
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  z-index: 0;
+  background: rgba(94, 92, 230, 0.12);
 }
 
 .waveform-progress-line {
-  stroke: #f4f4f4;
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1.5px;
+  margin-left: -0.75px;
+  z-index: 2;
+  background: #f4f4f4;
 }
 
 .waveform--seekable {
@@ -1549,7 +1697,7 @@ button {
 
 .stem-card-fader input[type="range"] {
   flex: 1;
-  accent-color: #2680eb;
+  accent-color: #5E5CE6;
   height: 14px;
 }
 
@@ -1578,7 +1726,7 @@ button {
   display: flex;
   flex-direction: column;
   padding: 12px;
-  border: 1px solid #2680eb;
+  border: 1px solid #5E5CE6;
   border-radius: 6px;
   background: #232a36;
 }
@@ -1617,7 +1765,7 @@ button {
   letter-spacing: 0.08em;
   padding: 3px 6px;
   border-radius: 3px;
-  background: #2680eb;
+  background: #5E5CE6;
   color: white;
 }
 
@@ -1671,11 +1819,11 @@ button {
 .mix-btn:hover { background-color: var(--spectrum-global-color-gray-200, #303030); }
 .mix-btn--disabled { opacity: 0.4; cursor: default; }
 .mix-btn--accent {
-  border-color: #2680eb;
-  background-color: #2680eb;
+  border-color: #5E5CE6;
+  background-color: #5E5CE6;
   color: #fff;
 }
-.mix-btn--accent:hover { background-color: #378ef0; }
+.mix-btn--accent:hover { background-color: #7674EC; }
 
 /* "Check script" collapsible toggle + inline script editor (script-based editable separation). */
 .script-toggle {
@@ -1806,8 +1954,11 @@ button {
 .seg-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
 /* Start time sits on its own line above; the speaker tag and the dialogue share the line below,
    vertically centered so they read at the same height. */
-.seg-row { display: flex; flex-direction: column; margin-bottom: 8px; }
-.seg-main { display: flex; align-items: center; min-width: 0; }
+.seg-row { position: relative; display: flex; flex-direction: column; margin-bottom: 8px; }
+/* While its speaker picker is open, lift the whole row above the rows below so the floating menu
+   paints over their dialogue instead of being covered by it. */
+.seg-row--picking { z-index: 30; }
+.seg-main { position: relative; display: flex; align-items: center; min-width: 0; }
 /* Tag column: every tag shares one width (set inline — sized to the longest speaker name, capped
    at 84px) so the dialogue always starts at the same x; the name is centered within it. The 84px
    here is the resting fallback before the inline width lands. */
@@ -1818,7 +1969,8 @@ button {
   margin-right: 8px;
   padding: 3px 8px;
   border-radius: 4px;
-  color: #fff;
+  /* Dark text: the speaker colors are light pastels, so white would wash out (see SPEAKER_COLORS). */
+  color: #1f1f1f;
   font-size: 11px;
   font-weight: 600;
   text-align: center;
@@ -1827,16 +1979,20 @@ button {
   text-overflow: ellipsis;
   cursor: pointer;
 }
-/* Speaker picker: opens in-flow under the tag (the row is a column + the list scrolls, so an
-   absolute dropdown would clip). Tap the tag → choose a speaker → it assigns and closes. */
+/* Speaker picker: floats as a popup pinned to the RIGHT of the tag at the same height (its `left`
+   is set inline to the tag width + gap), overlaying the dialogue rather than dropping down and
+   pushing lines apart. `top: 0` keeps it level with the tag. The open row is lifted (.seg-row--picking)
+   so this paints over the lines below. Tap the tag → choose a speaker → assigns and closes. */
 .seg-spk-menu {
-  align-self: flex-start;
-  margin: 6px 0 2px;
+  position: absolute;
+  top: 0;
+  z-index: 20;
   padding: 4px;
   min-width: 150px;
   background: #2c2c2c;
   border: 1px solid #4a4a4a;
   border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 .seg-spk-option {
   display: flex;
@@ -1850,7 +2006,7 @@ button {
 .seg-spk-option:hover { background: #383838; }
 .seg-spk-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
 .seg-spk-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seg-spk-check { margin-left: 8px; color: #6db0ff; }
+.seg-spk-check { margin-left: 8px; color: #A5A3F0; }
 /* Start time doubles as the split-boundary handle — tap to fine-tune the caret-ratio estimate */
 .seg-time { display: inline-block; margin-bottom: 1px; font-size: 10px; color: var(--spectrum-global-color-gray-500, #8d8d8d); cursor: pointer; }
 .seg-time:hover { color: var(--spectrum-global-color-gray-700, #d0d0d0); }
@@ -1890,6 +2046,11 @@ button {
 .seg-text-input:focus {
   outline: none;
 }
+/* Hidden while the speaker picker overlaps this line: UXP paints native <input>s above the floating
+   menu, so the covered dialogue is hidden for the moment the menu is open, then restored. */
+.seg-text-input--covered {
+  visibility: hidden;
+}
 
 .mix-output-name-input {
   margin: 0;
@@ -1916,7 +2077,7 @@ button {
 
 .mix-output-name-input:focus {
   outline: none;
-  border-color: #2680eb;
+  border-color: #5E5CE6;
   background: #1f1f1f;
 }
 
@@ -1973,7 +2134,8 @@ button {
 .transcript-segment-meta > * + * { margin-left: 8px; }
 .stem-cards > * + * { margin-top: 6px; }
 .stem-card > * + * { margin-top: 4px; }
-.stem-card-top > * + * { margin-left: 6px; }
+/* UXP flex `gap` is unreliable — space the play button and time with a margin instead. */
+.stem-card-transport > * + * { margin-left: 8px; }
 .stem-card-fader > * + * { margin-left: 8px; }
 .mix-controls > * + * { margin-left: 8px; }
 .mix-output > * + * { margin-top: 10px; }

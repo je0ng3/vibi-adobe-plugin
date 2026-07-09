@@ -21,10 +21,12 @@ export interface ScriptDraft {
   segments: TranscriptSegment[];
 }
 
-// Display labels are English and consistent across the stem list and the script editor, so a
-// speaker reads the same name in both places (and "Speaker 1" lines up with the "speaker_1" stem).
+// Default speaker name = just the number. The colored dot/tag (script) and the "Speakers" group
+// header (stem list) already convey that these are speakers, so spelling out "Speaker" would only
+// repeat that; the bare index reads the same in both places and lines up with the "speaker_N" stem.
+// Newly added speakers get their number here too (ScriptEditor's addSpeaker uses this).
 export function defaultSpeakerLabel(index: number): string {
-  return `Speaker ${index}`;
+  return `${index}`;
 }
 
 // A blank label or a generic auto-name — our English default, the old Korean "화자 N", or the
@@ -32,7 +34,8 @@ export function defaultSpeakerLabel(index: number): string {
 // A genuinely renamed label (anything else) is kept as-is.
 // 화자 = "화자"; escaped rather than written literally because UXP's JS parser chokes on
 // non-ASCII characters inside a regex literal ("Invalid regular expression: missing /").
-const AUTO_LABEL_RE = /^\s*(?:speaker|\uD654\uC790)[\s_]*\d*\s*$/i;
+// The speaker/\uD654\uC790 prefix is optional so a bare number (our new default, e.g. "1") also counts as auto.
+const AUTO_LABEL_RE = /^\s*(?:speaker|\uD654\uC790)?[\s_]*\d*\s*$/i;
 export function isAutoSpeakerLabel(label: string | null | undefined): boolean {
   return !label || AUTO_LABEL_RE.test(label);
 }
@@ -51,6 +54,20 @@ export function isDefaultSelectedStem(stemId: string, orderIndex: number): boole
   if (stemId === "background") return true;
   if (stemId === "background_reaction") return false;
   return orderIndex === 0;
+}
+
+// Short label shown INSIDE a stem group, where the group header ("Speakers"/"Background") already
+// supplies the category. Speakers collapse to just their (1-based) number; the two background
+// variants to the phrase that tells them apart. Returns null for an unrecognized stem so the caller
+// falls back to the full `stemDisplayLabel`. The full name still lives in the hover tooltip.
+export function stemGroupLabel(stemId: string): string | null {
+  if (stemId === "background") return "No reaction";
+  if (stemId === "background_reaction") return "With reaction";
+  let m = /^speaker_(\d+)$/i.exec(stemId);
+  if (m) return String(Number(m[1]) + 1); // server stems are 0-based; script numbers from 1
+  m = /^spk-(\d+)$/i.exec(stemId);
+  if (m) return String(Number(m[1])); // client re-cut stems already carry the 1-based index
+  return null;
 }
 
 // Canonical English label for a separated stem, derived from its server stemId so the background

@@ -11,43 +11,53 @@ interface Props {
   selection?: SelectionRange | null;
 }
 
-const VIEW_WIDTH = 1000;
-const VIEW_HEIGHT = 80;
-
 export function Waveform({ peaks, selected, volume = 100, progress, onSeek, selection }: Props) {
   // `scrub` is the live drag position (0..1) while the user is dragging the bar; it overrides the
   // `progress` prop so the playhead tracks the mouse smoothly without waiting on the player. The
-  // svg ref lets the document-level drag handlers map clientX → ratio even when the pointer has
-  // left the element.
+  // container ref lets the document-level drag handlers map clientX → ratio even when the pointer
+  // has left the element.
   const [scrub, setScrub] = useState<number | null>(null);
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const gain = Math.min(1.5, volume / 100);
 
   // Bars don't depend on playback position, so memoize them: during a drag only the thin progress
-  // overlay re-renders each frame, not all ~200 bar rects (keeps scrubbing smooth in UXP).
+  // overlay re-renders each frame, not all the bar divs (keeps scrubbing smooth in UXP).
+  //
+  // Rendered as HTML <div>s rather than SVG: the panel stretches the waveform to full width but
+  // only ~30px tall, and an SVG with preserveAspectRatio="none" squashes that non-uniformly —
+  // flattening round line-caps into rectangles and dropping zero-height (silent) bars entirely.
+  // Plain divs have no such distortion, so border-radius gives true pill caps at any size.
   const bars = useMemo(() => {
     if (!peaks || peaks.length === 0) return null;
-    const barCount = peaks.length;
-    const barSlot = VIEW_WIDTH / barCount;
-    const barWidth = Math.max(1, barSlot * 0.55);
-    return Array.from(peaks).map((p, i) => {
-      const h = Math.max(1, Math.min(1, p * gain) * VIEW_HEIGHT);
-      const y = (VIEW_HEIGHT - h) / 2;
-      const x = i * barSlot + (barSlot - barWidth) / 2;
-      return <rect key={i} className="waveform-bar" x={x} y={y} width={barWidth} height={h} rx={0.5} />;
+    // Downsample to a dense set of slim bars (a music-player level meter). Each bar is the peak
+    // (max) of its bin so loud transients still read.
+    const TARGET_BARS = 64;
+    const barCount = Math.min(TARGET_BARS, peaks.length);
+    const binSize = peaks.length / barCount;
+    // Floor every bar to a small fraction of the height so quiet/silent bins still show as little
+    // pills (with a large border-radius they round into dots) rather than leaving gaps.
+    const MIN_FRACTION = 0.16;
+    return Array.from({ length: barCount }, (_, i) => {
+      const start = Math.floor(i * binSize);
+      const end = Math.max(start + 1, Math.floor((i + 1) * binSize));
+      let mx = 0;
+      for (let j = start; j < end && j < peaks.length; j++) mx = Math.max(mx, peaks[j]);
+      const amp = Math.min(1, mx * gain);
+      const heightPct = (MIN_FRACTION + (1 - MIN_FRACTION) * amp) * 100;
+      return <div key={i} className="waveform-bar" style={{ height: `${heightPct}%` }} />;
     });
   }, [peaks, gain]);
 
   function ratioFromClientX(clientX: number): number {
-    const el = svgRef.current;
+    const el = rootRef.current;
     if (!el) return 0;
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0) return 0;
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   }
 
-  // While dragging, follow the mouse across the whole document (not just over the svg) so the
+  // While dragging, follow the mouse across the whole document (not just over the bar) so the
   // scrub doesn't stick if the pointer slips above/below the bar.
   useEffect(() => {
     if (scrub == null || !onSeek) return;
@@ -74,7 +84,7 @@ export function Waveform({ peaks, selected, volume = 100, progress, onSeek, sele
     return <div className="waveform waveform--empty" aria-hidden />;
   }
 
-  function startDrag(e: MouseEvent<SVGSVGElement>) {
+  function startDrag(e: MouseEvent<HTMLDivElement>) {
     if (!onSeek) return;
     const r = ratioFromClientX(e.clientX);
     setScrub(r);
@@ -82,39 +92,31 @@ export function Waveform({ peaks, selected, volume = 100, progress, onSeek, sele
   }
 
   const shownRatio = scrub != null ? scrub : progress != null ? Math.min(1, Math.max(0, progress)) : null;
-  const progressX = shownRatio != null ? shownRatio * VIEW_WIDTH : null;
+  const progressPct = shownRatio != null ? shownRatio * 100 : null;
 
   return (
-    <svg
-      ref={svgRef}
+    <div
+      ref={rootRef}
       className={`waveform${selected ? " waveform--selected" : ""}${onSeek ? " waveform--seekable" : ""}`}
-      viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-      preserveAspectRatio="none"
       onMouseDown={onSeek ? startDrag : undefined}
       aria-hidden
     >
-      {progressX != null && (
-        <rect className="waveform-progress-fill" x={0} y={0} width={progressX} height={VIEW_HEIGHT} />
+      {progressPct != null && (
+        <div className="waveform-progress-fill" style={{ width: `${progressPct}%` }} />
       )}
-      {bars}
-      {progressX != null && (
-        <line
-          className="waveform-progress-line"
-          x1={progressX}
-          x2={progressX}
-          y1={0}
-          y2={VIEW_HEIGHT}
-        />
+      <div className="waveform-bars">{bars}</div>
+      {progressPct != null && (
+        <div className="waveform-progress-line" style={{ left: `${progressPct}%` }} />
       )}
       {selection && (
-        <rect
+        <div
           className="waveform-selection"
-          x={selection.startRatio * VIEW_WIDTH}
-          y={0}
-          width={Math.max(0, (selection.endRatio - selection.startRatio) * VIEW_WIDTH)}
-          height={VIEW_HEIGHT}
+          style={{
+            left: `${selection.startRatio * 100}%`,
+            width: `${Math.max(0, selection.endRatio - selection.startRatio) * 100}%`,
+          }}
         />
       )}
-    </svg>
+    </div>
   );
 }

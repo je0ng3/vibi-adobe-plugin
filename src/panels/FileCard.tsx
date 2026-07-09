@@ -537,12 +537,17 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   // play — or its progress bar advance — for another. See StemCard/MixOutputView.
   const cardKey = entry.id;
 
+  // Deleting is destructive (it also removes the saved separation server-side), so the trash button
+  // opens a confirmation first; only "Delete" in that dialog actually removes.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   // Remove the card from the panel, and — if it corresponds to a saved separation — permanently
   // delete that record server-side so it doesn't reappear on the next sign-in. A fresh card that
   // never finished separating has no jobId, so there's nothing to delete.
-  function handleRemove() {
+  function confirmRemove() {
     const jobId = entry.restored?.jobId ?? separationJobId;
     if (jobId) void deleteSeparation(jobId).catch((e) => console.warn("[history] delete failed:", e));
+    setConfirmDelete(false);
     onRemove();
   }
 
@@ -561,17 +566,21 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   // job and loaded stems survive.
   if (view === "hidden") return null;
 
+  const openConfirm = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation(); // don't let a row-view trash click also open the file
+    setConfirmDelete(true);
+  };
   const deleteAction = (className: string, icon: ReactNode) => (
     <div
       className={className}
       role="button"
       tabIndex={0}
       aria-label="Delete file"
-      onClick={handleRemove}
+      onClick={openConfirm}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          handleRemove();
+          openConfirm(e);
         }
       }}
     >
@@ -581,6 +590,47 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
 
   return (
     <div className={`file-card file-card--${view}`}>
+      {confirmDelete && (
+        <div className="modal-backdrop" onClick={() => setConfirmDelete(false)}>
+          <div className="modal-card confirm-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-title">Delete this file?</h3>
+            <p className="modal-sub">
+              “{meta.fileName}” and its separation result will be permanently removed. This can’t be
+              undone.
+            </p>
+            <div className="confirm-actions">
+              <div
+                className="confirm-btn"
+                role="button"
+                tabIndex={0}
+                onClick={() => setConfirmDelete(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setConfirmDelete(false);
+                  }
+                }}
+              >
+                Cancel
+              </div>
+              <div
+                className="confirm-btn confirm-btn--danger"
+                role="button"
+                tabIndex={0}
+                onClick={confirmRemove}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    confirmRemove();
+                  }
+                }}
+              >
+                Delete
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {view === "detail" && (
         <div className="file-card-detail-top">
           <div
@@ -600,7 +650,6 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             </span>
             All files
           </div>
-          {deleteAction("file-card-delete", <IconTrash size={18} />)}
         </div>
       )}
       <div className="file-card-header">
@@ -632,12 +681,15 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             <div className="file-card-actions">{deleteAction("file-card-remove", <IconTrash size={16} />)}</div>
           </>
         ) : (
-          <div className="file-card-info">
-            <p className="file-card-name">{meta.fileName}</p>
-            {durationSec > 0 && (
-              <p className="file-card-meta">{formatClock(durationSec, { padMinutes: true })}</p>
-            )}
-          </div>
+          <>
+            <div className="file-card-info">
+              <p className="file-card-name">{meta.fileName}</p>
+              {durationSec > 0 && (
+                <p className="file-card-meta">{formatClock(durationSec, { padMinutes: true })}</p>
+              )}
+            </div>
+            {deleteAction("file-card-delete", <IconTrash size={18} />)}
+          </>
         )}
       </div>
 
