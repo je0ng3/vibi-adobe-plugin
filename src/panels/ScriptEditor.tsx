@@ -36,6 +36,26 @@ function formatMs(ms: number): string {
   return formatClock(ms / 1000, { padMinutes: true });
 }
 
+// UXP auto-selects a text field's whole value when it gains focus while showing programmatic
+// text, so the next keystroke wipes the whole line. A one-shot collapse in onFocus is racy —
+// UXP applies its select-all *after* our handler, so the collapse gets overwritten. Instead we
+// listen on `onSelect` (fires whenever the selection changes, including UXP's own select-all)
+// and collapse a whole-value selection to a caret at the end. To avoid stealing a selection the
+// user made deliberately (drag-select, Cmd/Ctrl+A), we only do this within a short window after
+// focus — the auto-select always lands in that window. Collapsing to (end,end) leaves a partial
+// selection, so onSelect doesn't re-fire into a loop.
+function collapseIfWholeSelected(el: HTMLInputElement) {
+  const end = el.value.length;
+  if (end === 0) return;
+  if (el.selectionStart === 0 && el.selectionEnd === end) {
+    try {
+      el.setSelectionRange(end, end);
+    } catch {
+      /* selection API may be unavailable; at worst the select-all stands */
+    }
+  }
+}
+
 // Parse a user-typed time into ms. Accepts "mm:ss", "mm:ss.s", or bare seconds ("9.5").
 function parseTimeToMs(input: string): number | null {
   const t = input.trim();
@@ -73,6 +93,9 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
   // After a split/merge we want the caret to land in the right line at the join point. We keep refs
   // to each line's text input and apply the focus once the draft has re-rendered.
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // When the currently-focused caption input was last focused — used to distinguish UXP's
+  // auto-select-on-focus (which we cancel) from a selection the user makes later (which we keep).
+  const focusedAtRef = useRef(0);
   const [pendingFocus, setPendingFocus] = useState<{ id: string; offset: number } | null>(null);
   useEffect(() => {
     if (!pendingFocus) return;
@@ -367,20 +390,21 @@ export function ScriptEditor({ draft, busy, onChange, onRegenerate }: Props) {
                 value={seg.text}
                 placeholder="Empty line — type a caption"
                 onFocus={(e) => {
-                  // UXP selects a field's *whole value* when it gains focus while still holding
-                  // its original (programmatic) text — so a single keystroke would wipe the line.
-                  // The field can't be emptied like the speaker-name input (it has to show the
-                  // caption), so instead collapse the selection to the end on the next tick, after
-                  // UXP's own select-all has settled. Focusing a line then just places the caret.
+                  // Mark the focus moment; the actual un-select happens in onSelect, which fires
+                  // when UXP applies its auto-select-all (see collapseIfWholeSelected). A couple of
+                  // deferred passes act as a backup for the case where UXP's select-all lands
+                  // without emitting onSelect.
+                  focusedAtRef.current = Date.now();
                   const el = e.currentTarget;
-                  const end = el.value.length;
-                  setTimeout(() => {
-                    try {
-                      el.setSelectionRange(end, end);
-                    } catch {
-                      /* selection API may be unavailable; at worst the select-all stands */
-                    }
-                  }, 0);
+                  setTimeout(() => collapseIfWholeSelected(el), 0);
+                  setTimeout(() => collapseIfWholeSelected(el), 50);
+                }}
+                onSelect={(e) => {
+                  // Only cancel the whole-value auto-select that UXP fires right after focus;
+                  // a selection the user makes later (drag, Cmd/Ctrl+A) is left alone.
+                  if (Date.now() - focusedAtRef.current < 500) {
+                    collapseIfWholeSelected(e.currentTarget);
+                  }
                 }}
                 onChange={(e) => {
                   setSegmentText(seg, e.currentTarget.value);
