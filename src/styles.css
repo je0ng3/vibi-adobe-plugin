@@ -2053,6 +2053,19 @@ button {
   outline: none;
 }
 
+/* Windows-only size bump for the script editor. Windows UXP renders the same px noticeably
+   smaller than macOS (different text metrics, no SF Pro fallback), so this dense, small-type
+   panel reads as too small there. Nudge the script text and its labels up ~1–2px on Windows
+   only (main.tsx tags <html> with .plat-win); macOS keeps the tuned defaults above. */
+.plat-win .seg-text-input { font-size: 13px; }
+.plat-win .seg-tag { font-size: 12px; }
+.plat-win .seg-time,
+.plat-win .seg-time-input { font-size: 11px; }
+.plat-win .seg-hint { font-size: 12px; }
+.plat-win .spk-name { font-size: 14px; }
+.plat-win .spk-count { font-size: 12px; }
+.plat-win .spk-add { font-size: 13px; }
+
 .mix-output-name-input {
   margin: 0;
   width: 100%;

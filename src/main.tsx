@@ -6,7 +6,23 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { diag } from "./diag";
 import { BFF_BASE_URL } from "./config";
 
+// UXP exposes built-in Node-ish modules ("os", "uxp", …) via a runtime require(); it's not a
+// resolvable ESM specifier, so declare it for the type checker (mirrors uxp-shim/uxp.ts).
+declare const require: (id: string) => unknown;
+
 const diagOn = (globalThis as { __VIBI_DIAG__?: boolean }).__VIBI_DIAG__ === true;
+
+// Tag the root with the host OS so CSS can compensate per-platform. Windows UXP renders the
+// same px font noticeably smaller than macOS (different text metrics / no SF Pro fallback), so
+// the dense script editor needs a size bump there — see `.plat-win` rules in styles.css.
+// Guarded: the `os` module only exists in the UXP runtime; in the browser dev stub require may
+// be absent, in which case we just skip the class.
+try {
+  const platform = (require("os") as { platform(): string }).platform();
+  if (platform === "win32") document.documentElement.classList.add("plat-win");
+} catch {
+  /* not in the UXP runtime (dev/serve) — no platform class, defaults apply */
+}
 
 try {
   // Startup marker — if this line doesn't appear on the panel, you're running a STALE cached
