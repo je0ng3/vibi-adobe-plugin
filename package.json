@@ -9,6 +9,9 @@
     "build:release": "node scripts/build-release.mjs",
     "package:release": "node scripts/build-release.mjs && node scripts/package.mjs",
     "package": "node scripts/package.mjs",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
