@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "b3d5d5b5",
   "name": "Vibi: AI Sound Eraser",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "index.html",
   "featureFlags": {
     "enableSWCSupport": true
