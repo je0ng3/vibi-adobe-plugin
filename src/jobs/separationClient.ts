@@ -29,7 +29,14 @@ interface SeparationStatus {
   progress: number;
   progressReason: string | null;
   stems: StemMeta[];
+  /** status=failed 시 사용자 표시용 friendly 안내 문구(BFF 가 sanitize 해 제공 — raw upstream 아님).
+   *  클라는 이 문구를 그대로 표시(문구 단일 소스=BFF). */
   error: string | null;
+  /**
+   * status=failed 시 사용자 조치 가능 실패의 stable code (no_audio_detected / audio_too_short /
+   * separation_start_failed). 인프라 오류면 없음. 표시는 error 로 충분하며, 코드는 향후 분기용 보존.
+   */
+  errorCode?: string | null;
 }
 
 async function startSeparation(
@@ -179,7 +186,7 @@ export async function runSeparation(
       diag(`runSeparation done: ${stems.length} stem(s)`);
       return { stems, jobId };
     }
-    if (st.status === "failed") throw new Error(st.error ?? "Separation failed");
+    if (st.status === "failed") throw new Error(st.error ?? "Separation failed. Please try again.");
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
   throw new Error("Separation timed out");
