@@ -33,11 +33,18 @@ The panel appears under Premiere's **Window** menu. A dev build (no `VIBI_BFF_BA
 ## Build & package (release)
 
 ```bash
-npm run package:release   # guarded prod build + zip → build/vibi-dub.ccx
+npm run release:patch     # bump version → prod build + .ccx → commit + tag (also :minor / :major)
+npm run package:release    # just the guarded prod build + zip → build/vibi-dub.ccx (no version bump)
 ```
 
-Defaults to the `https://api.vibi.fm` backend (override with `VIBI_BFF_BASE_URL=…`). The build is
-guarded for Marketplace — https-only manifest, no diagnostics, console stripped — and the
+`release:*` bumps the version in `package.json` **and** `manifest.json` in lockstep (a mismatch is
+rejected by Marketplace), runs `package:release`, then commits the two version files and tags
+`vX.Y.Z`. It does **not** push — it prints the `git push && git push --tags` to run when ready. The
+version bumps at release time (not on every `main` push) so the number stays 1:1 with shipped
+builds; add `--no-git` (`node scripts/release.mjs patch --no-git`) to build without committing.
+
+Both default to the `https://api.vibi.fm` backend (override with `VIBI_BFF_BASE_URL=…`). The build
+is guarded for Marketplace — https-only manifest, no diagnostics, console stripped — and the
 Adobe-assigned id `b3d5d5b5` (`manifest.json` top-level `id`) is required for upload.
 
 ## Configuration
@@ -79,5 +86,5 @@ src/
 └── config.ts # build-time config
 ```
 
-Build scripts live in `scripts/` (`build-release.mjs`, `package.mjs`). See
+Build scripts live in `scripts/` (`build-release.mjs`, `package.mjs`, `release.mjs`). See
 [`CLAUDE.md`](./CLAUDE.md) for the build model, UXP constraints, host APIs, and the code map.
