@@ -4,7 +4,7 @@ import { readSelectedAudioClips, getActiveProjectKey } from "../host/premiere";
 import { listSeparations } from "../jobs/separationClient";
 import { ProjectBrowser } from "./ProjectBrowser";
 import { FileCard, type FileEntry, type CardView } from "./FileCard";
-import { getBalance } from "../jobs/creditClient";
+import { getCredits } from "../jobs/creditClient";
 import { BuyCreditsModal } from "./BuyCreditsModal";
 import { BrandLockup } from "../brand/Logo";
 import { MAX_AUDIO_BYTES, BILLING_ENABLED, SEPARATION_RETENTION_DAYS } from "../config";
@@ -22,6 +22,9 @@ export function SeparationPanel({ onSignOut }: Props) {
   // Transient progress while a video clip's audio is extracted via Adobe Media Encoder.
   const [pickStatus, setPickStatus] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
+  // 서비스(Perso 계정) quota 가용 여부 — 개인 잔액과 무관한 전역 상태. false 면 공지를 띄우고
+  // 분리 시작을 막는다(어차피 실패할 잡에 크레딧이 선차감되는 것 방지). 조회 실패 시엔 fail-open.
+  const [serviceAvailable, setServiceAvailable] = useState(true);
   const [buyOpen, setBuyOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   // Bumped each time the project button is pressed; used as ProjectBrowser's key so re-pressing
@@ -33,8 +36,11 @@ export function SeparationPanel({ onSignOut }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function refreshBalance() {
-    getBalance()
-      .then(setBalance)
+    getCredits()
+      .then((c) => {
+        setBalance(c.balance);
+        setServiceAvailable(c.separationAvailable);
+      })
       // Keep the last known balance on a transient failure — nulling it would hide the
       // credits badge (and the buy button) on a single flaky request.
       .catch(() => {});
@@ -86,7 +92,7 @@ export function SeparationPanel({ onSignOut }: Props) {
   }, [selectedId]);
 
   // 사용자가 vibi 모바일 앱에서 충전하고 돌아온 뒤, 잔액이 자동 반영되도록 몇 분간 폴링한다.
-  // 공유 DB 라 앱에서의 충전이 곧 이 잔액(getBalance)에 반영된다.
+  // 공유 DB 라 앱에서의 충전이 곧 이 잔액(getCredits)에 반영된다.
   function pollBalanceAfterCheckout() {
     if (pollRef.current) clearInterval(pollRef.current);
     const baseline = balance; // balance before the top-up; stop as soon as it rises.
@@ -100,9 +106,10 @@ export function SeparationPanel({ onSignOut }: Props) {
     pollRef.current = setInterval(async () => {
       ticks++;
       try {
-        const b = await getBalance();
-        setBalance(b);
-        if (baseline != null && b > baseline) stop(); // top-up landed — done early.
+        const c = await getCredits();
+        setBalance(c.balance);
+        setServiceAvailable(c.separationAvailable);
+        if (baseline != null && c.balance > baseline) stop(); // top-up landed — done early.
       } catch {
         /* keep trying */
       }
@@ -205,6 +212,17 @@ export function SeparationPanel({ onSignOut }: Props) {
         />
       )}
 
+      {/* 서비스(Perso) 크레딧 예비분 소진 공지 — GET /credits 의 separationAvailable=false 일 때만.
+          개인 잔액과 무관한 전역 상태라 CTA 없이 중립 안내만 하고, 분리 시작은 카드에서 막는다. */}
+      {openId == null && !serviceAvailable && (
+        <div className="service-notice">
+          <p className="service-notice-title">Separation is temporarily unavailable</p>
+          <p className="service-notice-body">
+            VIBI is running low on service credits. Please check back later.
+          </p>
+        </div>
+      )}
+
       {openId == null && (
         <SourcePicker
           loading={pickerBusy}
@@ -254,6 +272,7 @@ export function SeparationPanel({ onSignOut }: Props) {
                 onBack={() => setSelectedId(null)}
                 onRemove={() => removeEntry(entry.id)}
                 onCreditChange={refreshBalance}
+                separationAvailable={serviceAvailable}
                 onBuyCredits={BILLING_ENABLED ? () => setBuyOpen(true) : undefined}
               />
             </li>

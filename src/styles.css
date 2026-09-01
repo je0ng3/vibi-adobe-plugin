@@ -529,6 +529,40 @@ button {
   color: #9a9a9a;
 }
 
+/* 서비스(Perso) 크레딧 예비분 소진 공지 — 메인 목록 상단의 중립 배너 (CTA 없음). UXP 는 CSS
+   그라디언트를 렌더하지 않으므로 단색 배경 + 실선 테두리로만 구성한다. */
+.service-notice {
+  box-sizing: border-box;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #5a4a2e;
+  border-radius: 6px;
+  background: #2a2318;
+}
+
+.service-notice-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #e8c37a;
+}
+
+.service-notice-body {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #9a9a9a;
+}
+
+/* 같은 사유를 카드 안(Separate / Retry 아래)에서 한 줄로 알리는 버전. */
+.service-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #e8c37a;
+}
+
 /* Inline project browser (replaces the old modal popup): lives in the panel flow below the
    source picker, framed by a solid box. */
 .proj-browser {

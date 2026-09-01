@@ -82,6 +82,12 @@ interface Props {
   onRemove: () => void;
   onCreditChange?: () => void;
   onBuyCredits?: () => void;
+  /**
+   * 서비스(Perso 계정) quota 가용 여부 (패널이 GET /credits 에서 받아 내려줌). false 면 새 분리는
+   * 확정 실패하므로 Separate/Retry 를 막는다 — 실패할 잡에 크레딧이 선차감되는 것 방지.
+   * 기본 true (fail-open).
+   */
+  separationAvailable?: boolean;
 }
 
 type Stage =
@@ -94,7 +100,11 @@ type Stage =
 
 const MIX_ID = "mix";
 
-export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, onCreditChange, onBuyCredits }: Props) {
+// 서비스(Perso 계정) 크레딧 예비분 소진 시 Separate/Retry 옆에 붙는 사유 — 패널 상단 공지와 동일 문구.
+const SERVICE_UNAVAILABLE_NOTE =
+  "Separation is temporarily unavailable — VIBI is running low on service credits. Please check back later.";
+
+export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, onCreditChange, onBuyCredits, separationAvailable = true }: Props) {
   // File identity comes from the live source when added fresh, or from saved metadata when this
   // card was rehydrated from history (no source bytes).
   const meta = entry.source
@@ -284,6 +294,8 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
   async function onGenerate() {
     const source = entry.source;
     if (!source) return; // restored cards have no original bytes — can't (re)separate
+    // 서비스(Perso) 크레딧 예비분 소진 — 시작해도 실패할 잡이라 버튼 비활성과 별개로 여기서도 막는다.
+    if (!separationAvailable) return;
     // Re-running supersedes any previous stems/mix — free their buffers first.
     setScriptOpen(false);
     setScriptDraft(null); // new separation → forget prior script + edits
@@ -570,6 +582,9 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
 
   const sizeMb = formatMb(meta.byteLength);
 
+  // Separate 를 누를 수 없는 조건: 아직 원본 피크가 디코드되지 않았거나, 서비스 quota 소진 중.
+  const separateBlocked = basePeaks == null || !separationAvailable;
+
   // One-glance status for the compact list row, so the user can pick without opening each tab.
   const rowStatus =
     prepFailed ? "Unreadable"
@@ -702,14 +717,15 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
             {/* Same custom accent button as "Mix selected" / "Regenerate audio" — sp-button renders
                 as a grey pill in UXP. Disabled until the source's peaks have decoded. */}
             <div
-              className={`mix-btn mix-btn--accent${basePeaks == null ? " mix-btn--disabled" : ""}`}
+              className={`mix-btn mix-btn--accent${separateBlocked ? " mix-btn--disabled" : ""}`}
               role="button"
-              tabIndex={basePeaks == null ? -1 : 0}
-              onClick={basePeaks == null ? undefined : onGenerate}
+              tabIndex={separateBlocked ? -1 : 0}
+              onClick={separateBlocked ? undefined : onGenerate}
             >
               Separate
             </div>
           </div>
+          {!separationAvailable && <p className="service-note">{SERVICE_UNAVAILABLE_NOTE}</p>}
         </div>
       )}
 
@@ -792,12 +808,21 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
               Buy credits
             </sp-button>
           )}
-          {/* 원본 바이트가 있는(복원이 아닌) 카드만 재분리 가능 — 실패한 분리를 같은 입력으로 재시도. */}
+          {/* 원본 바이트가 있는(복원이 아닌) 카드만 재분리 가능 — 실패한 분리를 같은 입력으로 재시도.
+              서비스 quota 소진 중엔 재시도해도 실패하므로 비활성. */}
           {entry.source && (
-            <sp-button variant={stage.buyable ? "secondary" : "accent"} size="s" onClick={onGenerate}>
+            <sp-button
+              variant={stage.buyable ? "secondary" : "accent"}
+              size="s"
+              /* React 18 은 커스텀 엘리먼트 속성을 문자열로 넘겨 disabled="false" 도 '있음'
+                 으로 읽힌다 — 막을 때만 속성이 붙도록 undefined 로 떨어뜨린다. */
+              disabled={!separationAvailable || undefined}
+              onClick={separationAvailable ? onGenerate : undefined}
+            >
               Retry
             </sp-button>
           )}
+          {!separationAvailable && <p className="service-note">{SERVICE_UNAVAILABLE_NOTE}</p>}
         </div>
       )}
     </div>
