@@ -13,6 +13,10 @@ interface Props {
   onSignOut: () => void;
 }
 
+// 잔액 + 서비스 quota 플래그를 다시 읽는 주기. 요청은 작은 JSON 하나라 부담이 없고, 서비스 quota
+// 가 회복/소진되는 것을 사용자가 아무것도 하지 않아도 이 간격 안에 반영한다.
+const CREDIT_HEARTBEAT_MS = 60_000;
+
 export function SeparationPanel({ onSignOut }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   // True while the panel rehydrates this project's saved separations on mount.
@@ -34,6 +38,7 @@ export function SeparationPanel({ onSignOut }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function refreshBalance() {
     getCredits()
@@ -48,8 +53,14 @@ export function SeparationPanel({ onSignOut }: Props) {
 
   useEffect(() => {
     refreshBalance();
+    // serviceAvailable 은 이 계정과 무관한 서버 측 상태라 사용자 행동만으로는 절대 갱신되지 않는다:
+    // 소진되면 분리 버튼이 막혀 onCreditChange 도 못 돌아 패널이 세션 내내 "unavailable" 로 굳고,
+    // 반대로 available 로 시작한 패널은 한참 뒤 시작한 잡을 그대로 제출해(선차감) 실패한다.
+    // 낮은 빈도 하트비트로 양방향 stale 을 모두 닫는다 — 잔액 배지 최신화도 겸한다.
+    heartbeatRef.current = setInterval(refreshBalance, CREDIT_HEARTBEAT_MS);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     };
   }, []);
 

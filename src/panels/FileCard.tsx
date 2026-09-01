@@ -822,7 +822,11 @@ export function FileCard({ entry, projectKey, view, onOpen, onBack, onRemove, on
               Retry
             </sp-button>
           )}
-          {!separationAvailable && <p className="service-note">{SERVICE_UNAVAILABLE_NOTE}</p>}
+          {/* 비활성된 Retry 의 사유 설명 — Retry 가 있는 카드(원본 바이트 보유)에서만. 복원 카드나
+              잔액 부족 에러에 이 문구가 따라붙으면 실제 실패 원인을 오도한다. */}
+          {entry.source && !separationAvailable && (
+            <p className="service-note">{SERVICE_UNAVAILABLE_NOTE}</p>
+          )}
         </div>
       )}
     </div>
